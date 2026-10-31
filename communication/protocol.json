@@ -1,0 +1,24 @@
+
+{
+    "protocol": "NOUR-SENTINEL-JSON",
+    "version": "1.0",
+    "encoding": "UTF-8",
+    "transport": "stdin-stdout",
+    "sender": "rust-engine",
+    "receiver": "python-brain",
+    "message_format": {
+        "source": "string",
+        "events": [
+            {
+                "type": "port_observed",
+                "port": 443,
+                "state": "open"
+            }
+        ]
+    },
+    "response_format": {
+        "engine": "NOUR SENTINEL",
+        "status": "analysis_completed",
+        "findings": []
+    }
+}

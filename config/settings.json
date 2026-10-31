@@ -1,0 +1,29 @@
+
+{
+    "application": {
+        "name": "NOUR SENTINEL",
+        "version": "0.1.0",
+        "environment": "development"
+    },
+    "engines": {
+        "rust": {
+            "enabled": true
+        },
+        "python": {
+            "enabled": true,
+            "executable": "python3"
+        }
+    },
+    "analysis": {
+        "sensitive_ports": [
+            23,
+            3389,
+            5900
+        ],
+        "log_enabled": true
+    },
+    "security": {
+        "authorized_scanning_only": true,
+        "automatic_actions": false
+    }
+}
