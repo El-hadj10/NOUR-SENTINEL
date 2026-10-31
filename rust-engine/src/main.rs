@@ -1,3 +1,4 @@
+
 mod scanner;
 
 use serde::{Deserialize, Serialize};
@@ -7,11 +8,6 @@ use std::io::Write;
 use std::net::IpAddr;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-
-// ============================================
-// NOUR SENTINEL v0.2.1
-// Configuration structures
-// ============================================
 
 #[derive(Deserialize)]
 struct Settings {
@@ -68,10 +64,7 @@ struct SecuritySettings {
     automatic_actions: bool,
 }
 
-// ============================================
-// Configuration validation
-// ============================================
-
+/// Valide les paramètres avant toute opération réseau.
 fn validate_settings(settings: &Settings) -> Result<(), String> {
     if !settings.engines.rust.enabled {
         return Err("Rust engine is disabled".into());
@@ -94,7 +87,9 @@ fn validate_settings(settings: &Settings) -> Result<(), String> {
     }
 
     if settings.network.scan_discovered_devices {
-        return Err("Automatic scanning of ARP-discovered devices is not implemented".into());
+        return Err(
+            "Automatic scanning of ARP-discovered devices is not implemented".into()
+        );
     }
 
     if settings.network.targets.is_empty() {
@@ -113,12 +108,14 @@ fn validate_settings(settings: &Settings) -> Result<(), String> {
         return Err("Maximum concurrency must be greater than zero".into());
     }
 
+    // Vérification des adresses IP.
     for target in &settings.network.targets {
         target
             .parse::<IpAddr>()
             .map_err(|_| format!("Invalid target IP: {}", target))?;
     }
 
+    // Vérification des ports sensibles.
     for port in &settings.analysis.sensitive_ports {
         if *port == 0 {
             return Err("Sensitive port configuration contains port 0".into());
@@ -128,23 +125,19 @@ fn validate_settings(settings: &Settings) -> Result<(), String> {
     Ok(())
 }
 
-// ============================================
-// Main execution
-// ============================================
-
+/// Exécute le moteur réseau et transmet les observations à Python.
 fn run() -> Result<(), String> {
-    println!("====================================");
-    println!("       NOUR SENTINEL v0.2.1");
-    println!("====================================");
-
-    // Project root
+    // Localisation de la racine du projet.
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .ok_or("Project root not found")?
         .to_path_buf();
 
-    // Load configuration
-    let config_path = root.join("config/settings.json");
+    // Chargement de la configuration.
+    let config_path = match std::env::var("NOUR_SENTINEL_CONFIG") {
+        Ok(path) => PathBuf::from(path),
+        Err(_) => root.join("config/settings.json"),
+    };
 
     let config_text = std::fs::read_to_string(&config_path)
         .map_err(|error| format!("Cannot read configuration: {}", error))?;
@@ -152,50 +145,62 @@ fn run() -> Result<(), String> {
     let settings: Settings = serde_json::from_str(&config_text)
         .map_err(|error| format!("Invalid configuration: {}", error))?;
 
-    // Validate configuration
     validate_settings(&settings)?;
 
+    println!("====================================");
     println!(
-        "[RUST] {} v{}",
-        settings.application.name, settings.application.version
+        "       {} v{}",
+        settings.application.name,
+        settings.application.version
+    );
+    println!("====================================");
+
+    println!(
+        "[RUST] Environment: {}",
+        settings.application.environment
     );
 
-    println!("[RUST] Environment: {}", settings.application.environment);
+    println!(
+        "[RUST] Configuration: {}",
+        config_path.display()
+    );
 
     println!("[RUST] Configuration validated.");
 
-    // ========================================
-    // Passive ARP discovery
-    // ========================================
-
+    // Découverte passive ARP.
     let devices = if settings.network.discover_arp {
         println!("[RUST] Passive ARP discovery...");
-
         scanner::discover_neighbors()
     } else {
         Vec::new()
     };
 
-    println!("[RUST] {} neighbor(s) discovered.", devices.len());
+    println!(
+        "[RUST] {} neighbor(s) discovered.",
+        devices.len()
+    );
 
-    // ========================================
-    // TCP scanning
-    // ========================================
+    // Vérification TCP concurrente.
+    println!("[RUST] Concurrent TCP verification...");
 
-    println!("[RUST] TCP verification...");
+    println!(
+        "[RUST] Maximum concurrency: {}",
+        settings.network.max_concurrency
+    );
 
     let observations = scanner::scan_tcp_ports(
         &settings.network.targets,
         &settings.network.ports,
         settings.network.timeout_ms,
+        settings.network.max_concurrency,
     );
 
-    println!("[RUST] {} observation(s) completed.", observations.len());
+    println!(
+        "[RUST] {} observation(s) completed.",
+        observations.len()
+    );
 
-    // ========================================
-    // Convert observations to JSON events
-    // ========================================
-
+    // Conversion des observations en événements JSON.
     let events: Vec<Value> = observations
         .iter()
         .map(|item| {
@@ -208,10 +213,7 @@ fn run() -> Result<(), String> {
         })
         .collect();
 
-    // ========================================
-    // Build complete Python input
-    // ========================================
-
+    // Construction du message destiné au moteur Python.
     let input_data = json!({
         "source": "rust-network-engine",
         "devices": devices,
@@ -219,14 +221,12 @@ fn run() -> Result<(), String> {
         "analysis_config": &settings.analysis
     });
 
-    // ========================================
-    // Python brain communication
-    // ========================================
-
+    // Localisation du moteur Python.
     let python_script = root.join("python-brain/main.py");
 
     println!("[RUST] Sending observations to Python...");
 
+    // Démarrage du processus Python.
     let mut child = Command::new(&settings.engines.python.executable)
         .arg(&python_script)
         .stdin(Stdio::piped())
@@ -235,11 +235,11 @@ fn run() -> Result<(), String> {
         .spawn()
         .map_err(|error| format!("Cannot start Python: {}", error))?;
 
-    // Serialize input
+    // Sérialisation JSON.
     let input = serde_json::to_vec(&input_data)
         .map_err(|error| format!("JSON serialization failed: {}", error))?;
 
-    // Send JSON to Python stdin
+    // Transmission des données à Python.
     child
         .stdin
         .take()
@@ -247,48 +247,39 @@ fn run() -> Result<(), String> {
         .write_all(&input)
         .map_err(|error| format!("Data transmission failed: {}", error))?;
 
-    // Wait for Python response
+    // Attente de la fin du moteur Python.
     let output = child
         .wait_with_output()
         .map_err(|error| format!("Python execution failed: {}", error))?;
 
-    // Validate Python process
     if !output.status.success() {
         return Err("Python analysis failed".into());
     }
 
-    // ========================================
-    // Parse Python JSON response
-    // ========================================
-
+    // Vérification de la réponse JSON.
     let result: Value = serde_json::from_slice(&output.stdout)
         .map_err(|error| format!("Invalid Python JSON response: {}", error))?;
-
-    // ========================================
-    // Display security report
-    // ========================================
 
     println!("\n[RUST] Security report:\n");
 
     println!(
         "{}",
         serde_json::to_string_pretty(&result)
-            .map_err(|error| { format!("JSON display error: {}", error) })?
+            .map_err(|error| format!("JSON display error: {}", error))?
     );
 
-    println!("\n[SUCCESS] NOUR SENTINEL v0.2.1 operational.");
+    println!(
+        "\n[SUCCESS] {} v{} operational.",
+        settings.application.name,
+        settings.application.version
+    );
 
     Ok(())
 }
 
-// ============================================
-// Application entry point
-// ============================================
-
 fn main() {
     if let Err(error) = run() {
         eprintln!("[ERROR] {}", error);
-
         std::process::exit(1);
     }
 }
