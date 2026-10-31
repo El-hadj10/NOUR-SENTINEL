@@ -51,3 +51,18 @@ et réseaux pour lesquels vous disposez d'une autorisation.
 
 NOUR SENTINEL
 Version 0.1.0
+
+## Version 0.2.0 - Network Intelligence
+
+Nouveautés :
+
+- Passive ARP neighbor discovery.
+- TCP connectivity checks.
+- Configurable IP targets and ports.
+- Python service classification.
+- Structured JSON security reports.
+
+Run:
+
+```bash
+cargo run --manifest-path rust-engine/Cargo.toml

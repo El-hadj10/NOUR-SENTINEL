@@ -2,7 +2,7 @@
 {
     "application": {
         "name": "NOUR SENTINEL",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "environment": "development"
     },
     "engines": {
@@ -13,6 +13,19 @@
             "enabled": true,
             "executable": "python3"
         }
+    },
+    "network": {
+        "targets": [
+            "127.0.0.1"
+        ],
+        "ports": [
+            22,
+            80,
+            443,
+            3389,
+            5900
+        ],
+        "timeout_ms": 500
     },
     "analysis": {
         "sensitive_ports": [
