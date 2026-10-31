@@ -1,5 +1,6 @@
 
 mod scanner;
+mod history;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -257,8 +258,42 @@ fn run() -> Result<(), String> {
     }
 
     // Vérification de la réponse JSON.
-    let result: Value = serde_json::from_slice(&output.stdout)
+    let mut result: Value = serde_json::from_slice(&output.stdout)
         .map_err(|error| format!("Invalid Python JSON response: {}", error))?;
+
+    // Historique et détection de changements (v0.4.0)
+    if let Ok(conn) = history::init_db(&root) {
+        println!("[RUST] Behavioral intelligence: tracking history...");
+        
+        // Ajouter les événements au rapport pour sauvegarde
+        if let Some(obj) = result.as_object_mut() {
+            obj.insert("events".to_string(), serde_json::to_value(&events).unwrap_or(json!([])));
+        }
+        
+        if let Ok(scan_id) = history::save_scan(&conn, &settings.network.targets, &result) {
+            println!("[RUST] Scan recorded in history (ID: {}).", scan_id);
+            
+            if let Ok(changes) = history::detect_changes(&conn, scan_id) {
+                if !changes.is_empty() {
+                    println!("\n[BEHAVIORAL] Changes detected since last scan:");
+                    for change in &changes {
+                        match change.change.as_str() {
+                            "new" => println!("  [NEW] {}:{} - {} -> {}", change.ip, change.port, change.previous_state.as_ref().unwrap_or(&"?".to_string()), change.current_state.as_ref().unwrap_or(&"open".to_string())),
+                            "removed" => println!("  [REMOVED] {}:{} - {} -> {}", change.ip, change.port, change.previous_state.as_ref().unwrap_or(&"open".to_string()), change.current_state.as_ref().unwrap_or(&"?".to_string())),
+                            _ => {}
+                        }
+                    }
+                    println!();
+                    
+                    if let Some(obj) = result.as_object_mut() {
+                        obj.insert("behavioral_changes".to_string(), serde_json::to_value(&changes).unwrap_or(json!([])));
+                    }
+                } else {
+                    println!("[BEHAVIORAL] No changes detected since last scan.");
+                }
+            }
+        }
+    }
 
     println!("\n[RUST] Security report:\n");
 
