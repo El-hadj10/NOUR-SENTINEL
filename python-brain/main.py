@@ -11,12 +11,14 @@ def main():
 
         result = analyze_events(data)
 
+        # stdout is reserved exclusively for JSON.
         json.dump(result, sys.stdout, indent=4)
         sys.stdout.write("\n")
+        sys.stdout.flush()
 
     except Exception as error:
         print(
-            f"Python analysis error: {error}",
+            f"[PYTHON ERROR] {error}",
             file=sys.stderr
         )
         sys.exit(1)

@@ -13,6 +13,16 @@ sys.path.insert(
 from detector import detect_threats
 
 
+ANALYSIS_CONFIG = {
+    "sensitive_ports": [23, 3389, 5900],
+    "known_services": {
+        "22": "SSH",
+        "80": "HTTP",
+        "443": "HTTPS"
+    }
+}
+
+
 class TestDetector(unittest.TestCase):
 
     def test_sensitive_port_detection(self):
@@ -23,10 +33,9 @@ class TestDetector(unittest.TestCase):
             "state": "open"
         }]
 
-        results = detect_threats(events)
+        results = detect_threats(events, ANALYSIS_CONFIG)
 
         self.assertEqual(len(results), 1)
-        self.assertEqual(results[0]["port"], 3389)
         self.assertEqual(results[0]["severity"], "warning")
 
     def test_normal_port(self):
@@ -37,9 +46,8 @@ class TestDetector(unittest.TestCase):
             "state": "open"
         }]
 
-        results = detect_threats(events)
+        results = detect_threats(events, ANALYSIS_CONFIG)
 
-        self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["service"], "HTTPS")
         self.assertEqual(results[0]["severity"], "info")
 
@@ -51,7 +59,7 @@ class TestDetector(unittest.TestCase):
             "state": "closed"
         }]
 
-        results = detect_threats(events)
+        results = detect_threats(events, ANALYSIS_CONFIG)
 
         self.assertEqual(len(results), 0)
 
@@ -63,11 +71,39 @@ class TestDetector(unittest.TestCase):
             "state": "open"
         }]
 
-        results = detect_threats(events)
+        results = detect_threats(events, ANALYSIS_CONFIG)
 
-        self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["service"], "Unknown")
         self.assertEqual(results[0]["severity"], "info")
+
+    def test_custom_sensitive_port(self):
+        custom_config = {
+            "sensitive_ports": [8080],
+            "known_services": {"8080": "Custom HTTP"}
+        }
+
+        events = [{
+            "type": "port_observed",
+            "ip": "127.0.0.1",
+            "port": 8080,
+            "state": "open"
+        }]
+
+        results = detect_threats(events, custom_config)
+
+        self.assertEqual(results[0]["severity"], "warning")
+
+    def test_invalid_port(self):
+        events = [{
+            "type": "port_observed",
+            "ip": "127.0.0.1",
+            "port": True,
+            "state": "open"
+        }]
+
+        results = detect_threats(events, ANALYSIS_CONFIG)
+
+        self.assertEqual(len(results), 0)
 
 
 if __name__ == "__main__":

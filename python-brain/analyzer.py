@@ -7,7 +7,12 @@ def analyze_events(data):
     events = data.get("events", [])
     devices = data.get("devices", [])
 
-    findings = detect_threats(events)
+    analysis_config = data.get("analysis_config", {})
+
+    findings = detect_threats(
+        events,
+        analysis_config
+    )
 
     open_ports = [
         event for event in events
@@ -16,7 +21,7 @@ def analyze_events(data):
 
     return {
         "engine": "NOUR SENTINEL",
-        "version": "0.2.0",
+        "version": "0.2.1",
         "source": data.get("source", "unknown"),
         "network": {
             "neighbors_discovered": len(devices),

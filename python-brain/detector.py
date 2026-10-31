@@ -1,25 +1,18 @@
 
-SENSITIVE_PORTS = {
-    23: "Telnet",
-    3389: "Remote Desktop Protocol",
-    5900: "VNC"
-}
+def detect_threats(events, analysis_config):
 
-KNOWN_SERVICES = {
-    22: "SSH",
-    53: "DNS",
-    80: "HTTP",
-    443: "HTTPS",
-    3306: "MySQL",
-    5432: "PostgreSQL",
-    8080: "HTTP Alternative"
-}
+    sensitive_ports = set(
+        analysis_config.get("sensitive_ports", [])
+    )
 
+    known_services = analysis_config.get(
+        "known_services", {}
+    )
 
-def detect_threats(events):
     findings = []
 
     for event in events:
+
         if event.get("type") != "port_observed":
             continue
 
@@ -27,18 +20,23 @@ def detect_threats(events):
         state = event.get("state")
         ip = event.get("ip", "unknown")
 
-        if not isinstance(port, int) or not 1 <= port <= 65535:
+        if not isinstance(port, int):
+            continue
+
+        if isinstance(port, bool) or not 1 <= port <= 65535:
             continue
 
         if state != "open":
             continue
 
-        service = KNOWN_SERVICES.get(
-            port, SENSITIVE_PORTS.get(port, "Unknown")
+        service = known_services.get(
+            str(port), "Unknown"
         )
 
         severity = (
-            "warning" if port in SENSITIVE_PORTS else "info"
+            "warning"
+            if port in sensitive_ports
+            else "info"
         )
 
         findings.append({
@@ -46,7 +44,9 @@ def detect_threats(events):
             "port": port,
             "service": service,
             "severity": severity,
-            "message": f"{service} accessible on {ip}:{port}"
+            "message": (
+                f"{service} accessible on {ip}:{port}"
+            )
         })
 
     return findings

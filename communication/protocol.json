@@ -1,7 +1,7 @@
 
 {
     "protocol": "NOUR-SENTINEL-JSON",
-    "version": "2.0",
+    "version": "2.1",
     "encoding": "UTF-8",
     "transport": "stdin-stdout",
     "sender": "rust-network-engine",
@@ -9,18 +9,19 @@
     "message_format": {
         "source": "rust-network-engine",
         "devices": [],
-        "events": [
-            {
-                "type": "port_observed",
-                "ip": "127.0.0.1",
-                "port": 443,
-                "state": "open"
+        "events": [],
+        "analysis_config": {
+            "sensitive_ports": [23, 3389, 5900],
+            "known_services": {
+                "22": "SSH",
+                "80": "HTTP",
+                "443": "HTTPS"
             }
-        ]
+        }
     },
     "response_format": {
         "engine": "NOUR SENTINEL",
-        "version": "0.2.0",
+        "version": "0.2.1",
         "status": "analysis_completed",
         "findings": []
     }

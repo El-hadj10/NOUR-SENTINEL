@@ -2,7 +2,7 @@
 {
     "application": {
         "name": "NOUR SENTINEL",
-        "version": "0.2.0",
+        "version": "0.2.1",
         "environment": "development"
     },
     "engines": {
@@ -18,6 +18,8 @@
         "targets": [
             "127.0.0.1"
         ],
+        "discover_arp": true,
+        "scan_discovered_devices": false,
         "ports": [
             22,
             80,
@@ -25,7 +27,8 @@
             3389,
             5900
         ],
-        "timeout_ms": 500
+        "timeout_ms": 500,
+        "max_concurrency": 10
     },
     "analysis": {
         "sensitive_ports": [
@@ -33,7 +36,15 @@
             3389,
             5900
         ],
-        "log_enabled": true
+        "known_services": {
+            "22": "SSH",
+            "53": "DNS",
+            "80": "HTTP",
+            "443": "HTTPS",
+            "3306": "MySQL",
+            "5432": "PostgreSQL",
+            "8080": "HTTP Alternative"
+        }
     },
     "security": {
         "authorized_scanning_only": true,

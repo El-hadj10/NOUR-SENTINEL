@@ -1,4 +1,3 @@
-
 use serde::Serialize;
 use std::fs;
 use std::net::{IpAddr, SocketAddr, TcpStream};
@@ -39,22 +38,14 @@ pub fn discover_neighbors() -> Vec<NetworkDevice> {
         let interface = fields[5].to_string();
 
         if mac != "00:00:00:00:00:00" {
-            devices.push(NetworkDevice {
-                ip,
-                mac,
-                interface,
-            });
+            devices.push(NetworkDevice { ip, mac, interface });
         }
     }
 
     devices
 }
 
-pub fn scan_tcp_ports(
-    targets: &[String],
-    ports: &[u16],
-    timeout_ms: u64,
-) -> Vec<PortObservation> {
+pub fn scan_tcp_ports(targets: &[String], ports: &[u16], timeout_ms: u64) -> Vec<PortObservation> {
     let mut observations = Vec::new();
     let timeout = Duration::from_millis(timeout_ms);
 
@@ -72,12 +63,7 @@ pub fn scan_tcp_ports(
 
             let state = match TcpStream::connect_timeout(&address, timeout) {
                 Ok(_) => "open",
-                Err(error)
-                    if error.kind()
-                        == std::io::ErrorKind::ConnectionRefused =>
-                {
-                    "closed"
-                }
+                Err(error) if error.kind() == std::io::ErrorKind::ConnectionRefused => "closed",
                 Err(_) => "filtered_or_unreachable",
             };
 
@@ -90,4 +76,29 @@ pub fn scan_tcp_ports(
     }
 
     observations
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_invalid_ip() {
+        let targets = vec!["not-an-ip".to_string()];
+        let ports = vec![22];
+
+        let result = scan_tcp_ports(&targets, &ports, 500);
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn handles_empty_targets() {
+        let targets: Vec<String> = Vec::new();
+        let ports = vec![22, 443];
+
+        let result = scan_tcp_ports(&targets, &ports, 500);
+
+        assert!(result.is_empty());
+    }
 }

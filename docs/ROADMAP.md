@@ -14,6 +14,22 @@
 - [x] Classification des services.
 - [ ] Tests d'intégration complets.
 
+
+## VERSION 0.2.1 - Hardening & Refactoring
+
+- [x] Audit technique de la v0.2.0.
+- [x] Centralisation des règles d'analyse.
+- [x] Transmission de la configuration à Python.
+- [x] Validation des adresses IP.
+- [x] Contrat stdout JSON.
+- [x] Tests supplémentaires du détecteur.
+- [x] Tests de l'analyseur.
+- [x] Premiers tests unitaires Rust.
+- [ ] Tests d'intégration Rust/Python.
+- [ ] Scanner TCP concurrent.
+- [ ] Intégration contrôlée ARP/TCP.
+
+
 ## VERSION 0.3.0 - Threat Intelligence
 - [ ] Analyse des journaux système.
 - [ ] Détection comportementale.
