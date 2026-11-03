@@ -50,7 +50,7 @@ class TestEndToEnd(unittest.TestCase):
             test_config = {
                 "application": {
                     "name": "NOUR SENTINEL",
-                    "version": "0.3.0",
+                    "version": "0.4.0",
                     "environment": "integration-test"
                 },
                 "engines": {
@@ -125,7 +125,7 @@ class TestEndToEnd(unittest.TestCase):
 
                 # Vérification du rapport produit par Python.
                 self.assertEqual(report["engine"], "NOUR SENTINEL")
-                self.assertEqual(report["version"], "0.3.0")
+                self.assertEqual(report["version"], "0.4.0")
                 self.assertEqual(
                     report["status"],
                     "analysis_completed"
@@ -151,7 +151,7 @@ class TestEndToEnd(unittest.TestCase):
                 self.assertEqual(finding["severity"], "info")
 
                 self.assertIn(
-                    "[SUCCESS] NOUR SENTINEL v0.3.0 operational.",
+                    "[SUCCESS] NOUR SENTINEL v0.4.0 operational.",
                     process.stdout
                 )
 

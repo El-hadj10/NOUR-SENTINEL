@@ -277,10 +277,20 @@ fn run() -> Result<(), String> {
                 if !changes.is_empty() {
                     println!("\n[BEHAVIORAL] Changes detected since last scan:");
                     for change in &changes {
-                        match change.change.as_str() {
-                            "new" => println!("  [NEW] {}:{} - {} -> {}", change.ip, change.port, change.previous_state.as_ref().unwrap_or(&"?".to_string()), change.current_state.as_ref().unwrap_or(&"open".to_string())),
-                            "removed" => println!("  [REMOVED] {}:{} - {} -> {}", change.ip, change.port, change.previous_state.as_ref().unwrap_or(&"open".to_string()), change.current_state.as_ref().unwrap_or(&"?".to_string())),
-                            _ => {}
+                        match &change.change_type {
+                            history::ChangeType::New => {
+                                println!("  [NEW] {}:{} is now open", change.ip, change.port)
+                            }
+                            history::ChangeType::Removed => {
+                                println!("  [REMOVED] {}:{} no longer observed as open", change.ip, change.port)
+                            }
+                            history::ChangeType::StateChanged => println!(
+                                "  [CHANGED] {}:{} {} -> {}",
+                                change.ip,
+                                change.port,
+                                change.previous_state.as_deref().unwrap_or("unknown"),
+                                change.current_state.as_deref().unwrap_or("unknown")
+                            ),
                         }
                     }
                     println!();

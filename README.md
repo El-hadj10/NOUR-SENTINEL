@@ -10,9 +10,43 @@ NOUR SENTINEL est un outil modulaire de diagnostic et d'analyse réseau combinan
 
 ## Version actuelle
 
-**0.3.0 — Concurrent TCP Scanner & Integration**
+**0.4.0 — Behavioral Intelligence & Persistence**
 
-Branche de développement : `feature/v0.3.0`
+Branche de développement : `feature/v0.4.0`
+
+Statut : v0.4.0 livrée (historique SQLite, détection de changements à trois états, recommandations par port).
+
+Provenance v0.3.0 :
+- Scanner TCP concurrent avec `max_concurrency`
+- Tests d'intégration Rust ↔ Python
+- Configuration temporaire `NOUR_SENTINEL_CONFIG`
+
+## Architecture
+
+```text
+NOUR-SENTINEL/
+├── rust-engine/       # Moteur réseau Rust
+├── python-brain/      # Analyse et détection Python
+├── communication/     # Contrat JSON
+├── config/            # Configuration
+├── data/
+│   ├── history/       # Historique des scans SQLite
+│   │   └── nour_sentinel.db
+│   ├── logs/
+│   └── reports/
+├── tests/
+│   ├── python/
+│   ├── rust/
+│   └── integration/
+└── docs/
+```
+
+## Prérequis
+
+- Linux (lecture de la table ARP `/proc/net/arp`)
+- Rust et Cargo
+- Python 3 (bibliothèque standard uniquement)
+- SQLite (bibliothèque C incluse via rusqlite)
 
 ## Architecture
 

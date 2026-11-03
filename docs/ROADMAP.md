@@ -37,12 +37,13 @@
 - [ ] Intégration contrôlée ARP/TCP.
 - [ ] Audit final et publication de la version.
 
-## VERSION 0.4.0 — Behavioral Intelligence
+## VERSION 0.4.0 — Behavioral Intelligence & Persistence
 
-- [ ] Analyse des journaux système.
-- [ ] Détection comportementale.
-- [ ] Historique des observations.
-- [ ] Classification avancée des risques.
+- [x] Historique persistant des scans via SQLite (transactions atomiques).
+- [x] Détection de changements entre deux scans (open / closed / filtered_or_unreachable).
+- [x] Tests unitaires de l'historique (8 tests).
+- [x] Recommandations de sécurité enrichies par port.
+- [x] Chaque finding inclut `recommendation` et `risk_level`.
 
 ## VERSION 0.5.0 — Dashboard
 

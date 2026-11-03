@@ -50,10 +50,10 @@ Depuis la racine du projet :
 cargo test --manifest-path rust-engine/Cargo.toml
 ```
 
-## Résultat validé — v0.3.0
+## Résultat validé — v0.4.0
 
-- 7 tests exécutés.
-- 7 tests réussis.
+- 15 tests exécutés (7 scanner, 8 historique SQLite).
+- 15 tests réussis.
 - 0 échec.
 
 ## Limites des tests

@@ -27,7 +27,7 @@ Le scénario d'intégration repose sur les étapes suivantes :
 
 1 test de bout en bout : compilation du véritable binaire Rust, ouverture d'un serveur TCP local temporaire, exécution du moteur complet et vérification du rapport final.
 
-## 4. État actuel — v0.3.0
+## 4. État actuel — v0.4.0
 
 - Chargement de la configuration : validé.
 - Validation des paramètres : validée.

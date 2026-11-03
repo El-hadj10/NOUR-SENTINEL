@@ -21,7 +21,7 @@ def analyze_events(data):
 
     return {
         "engine": "NOUR SENTINEL",
-        "version": "0.3.0",
+        "version": "0.4.0",
         "source": data.get("source", "unknown"),
         "network": {
             "neighbors_discovered": len(devices),
