@@ -19,3 +19,8 @@ venv/
 # Temporary files
 *.tmp
 .DS_Store
+
+# Laboratoire : secrets, sessions, caches et rapports
+*.phc
+*.session.json
+.pytest_cache/

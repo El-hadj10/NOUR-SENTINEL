@@ -5,6 +5,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -81,11 +82,26 @@ class TestEndToEnd(unittest.TestCase):
 
         return config_path
 
+    def write_session(self, directory):
+        """Session locale courte, équivalente à un lancement authentifié."""
+
+        path = Path(directory) / "session.json"
+        path.write_text(
+            json.dumps({"expires_at": int(time.time()) + 300}),
+            encoding="utf-8"
+        )
+        os.chmod(path, 0o600)
+
+        return path
+
     def run_engine(self, config_path, history_dir):
         """Exécute le moteur avec configuration et historique isolés."""
 
         environment = os.environ.copy()
         environment["NOUR_SENTINEL_CONFIG"] = str(config_path)
+        environment["NOUR_SENTINEL_SESSION"] = str(
+            self.write_session(Path(config_path).parent)
+        )
 
         # Isolation stricte de l'historique : la base du développeur
         # n'est jamais utilisée ni modifiée par les tests.

@@ -79,6 +79,39 @@
 - [x] 41 tests Rust, 82 tests Python, 8 tests d'intégration.
 - [x] Documentation dédiée : `docs/SECURITY_INTELLIGENCE.md`.
 
+## VERSION 0.6.0-beta.1 — Security Intelligence Lab
+
+- [x] Auth Gate propriétaire Argon2id (PHC, 0600, 3 essais, session courte).
+- [x] Contrôle d'accès Rust avant configuration et réseau.
+- [x] CLI authentifié et lanceur `lancer-nour-sentinel.sh`.
+- [x] Liste blanche locale, refus des cibles hors périmètre.
+- [x] Inventaire dpkg/rpm, systemd, `ss` et familles locales.
+- [x] Sondes SSH/HTTP uniques, TLS 1.2/1.3 et certificat.
+- [x] `sshd -T`, `login.defs` et PAM ; journald sans logs bruts ; Docker read-only.
+- [x] OSV/NVD/KEV/EPSS explicites avec cache et budget.
+- [x] Rapports 0600 et base SQLite dédiée.
+- [x] 47 tests Rust, 145 tests Python, 8 tests d'intégration.
+
+## VERSION 0.6.0-beta.2 — Durcissement
+
+- [ ] Vérification des correctifs de distribution avant « applicable confirmée ».
+- [ ] Preuves et faux positifs documentés sur un panel de distributions.
+- [ ] Schéma de rapport stable et migrations SQLite testées.
+- [ ] Exécution contrôlée de testssl.sh et nmap avec artefacts horodatés.
+
+## VERSION 0.6.0-beta.3 — Corrélation multi-source
+
+- [ ] Actif → version → CVE → KEV/EPSS reliés dans l'historique.
+- [ ] Rapports enrichis et exportables.
+
+## VERSION 0.6.0 — Fusion stable
+
+- [ ] Rebaser le laboratoire sur v0.5.0 et intégrer par lots.
+- [ ] Audit complet, tests Rust/Python/E2E et revue de sécurité.
+- [ ] Aucun déplacement de tag existant.
+
+## VERSION 1.0.0 — Production
+
 ## VERSION 1.0.0 — Production
 
 - [ ] Architecture stabilisée.

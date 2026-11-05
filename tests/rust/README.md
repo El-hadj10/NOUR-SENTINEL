@@ -2,8 +2,8 @@
 
 ## Objectif
 
-Vérifier la fiabilité du moteur Rust : scanner TCP, couche d'historique SQLite
-et inventaire local des sockets.
+Vérifier la fiabilité du moteur Rust : scanner TCP, couche d'historique SQLite,
+inventaire local des sockets et, depuis 0.6.0-beta.1, contrôle d'accès.
 
 ## Emplacement des tests
 
@@ -12,6 +12,7 @@ Les tests unitaires sont intégrés dans les modules concernés.
 - `rust-engine/src/scanner.rs` : 7 tests.
 - `rust-engine/src/history.rs` : 20 tests.
 - `rust-engine/src/inventory.rs` : 14 tests.
+- `rust-engine/src/auth.rs` : 6 tests.
 
 ## Tests du scanner (7)
 
@@ -79,16 +80,25 @@ Les tests unitaires sont intégrés dans les modules concernés.
 13. `reads_interfaces_with_ipv6_addresses` — décodage ordre réseau de `if_inet6`.
 14. `parses_ip_json_addresses` — adresses de `ip -j addr show`.
 
+## Tests de l'authentification (6)
+
+1. `accepts_valid_session` — session 0600 non expirée acceptée.
+2. `rejects_expired_session` — session expirée refusée.
+3. `rejects_overlong_session` — durée supérieure à 1 h refusée.
+4. `rejects_loose_permissions` — mode 0644 refusé.
+5. `rejects_malformed_session` — JSON invalide refusé.
+6. `rejects_symlinked_session` — lien symbolique refusé.
+
 ## Exécution
 
 ```bash
 cargo test --manifest-path rust-engine/Cargo.toml
 ```
 
-## Résultat validé — v0.5.0
+## Résultat validé — 0.6.0-beta.1
 
-- 41 tests exécutés (7 scanner, 20 historique, 14 inventaire).
-- 41 tests réussis, 0 échec.
+- 47 tests exécutés (7 scanner, 20 historique, 14 inventaire, 6 auth).
+- 47 tests réussis, 0 échec.
 
 ## Isolation
 

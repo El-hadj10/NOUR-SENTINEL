@@ -121,7 +121,35 @@ Le contrat JSON `3.0` transporte l'inventaire, la configuration
 `intelligence`, `tools` et le périmètre autorisé. Détail complet :
 `docs/SECURITY_INTELLIGENCE.md`.
 
-## 10. Évolutions
+## 10. Laboratoire 0.6.0-beta.1
+
+Couche additive, séparée de la ligne stable v0.5.0. Les moteurs v0.5.0
+restent la référence ; le laboratoire ajoute l'accès, le CLI et la
+persistance privée.
+
+- **Auth Gate** (`security_intelligence/auth_gate.py`) : Argon2id, hash PHC,
+fichier `~/.config/nour-sentinel/auth.phc` en 0600, dossier 0700, trois
+tentatives avec temporisation. Aucun secret en clair.
+- **Session courte** : fichier 0600, expiration 300 s, plafond 1 h,
+symlinks et permissions larges refusés.
+- **Rust** (`auth.rs`) : `enforce()` s'exécute avant la configuration, l'ARP
+et toute tentative TCP ; sans terminal ni session, le moteur refuse.
+- **CLI** (`security_intelligence/cli.py`) : authentification avant toute
+commande ; stdout réservé au JSON, diagnostics sur stderr.
+- **Liste blanche** : `config/security_intelligence.json` (127.0.0.1 et
+localhost par défaut) ; refus avant la sonde.
+- **Collecteurs** : dpkg/rpm, systemd, `ss`, `sshd -T`, PAM, journald agrégé
+et Docker en lecture seule.
+- **Intelligence externe** : OSV/NVD/KEV/EPSS uniquement sur `--online`,
+avec cache, budget et redirections refusées ; constats `to_verify`.
+- **Données** : rapports 0600 sous `data/reports/`, base
+`data/history/nour_sentinel_intel.db`, dossiers 0700.
+
+Frontière : un compte Linux compromis ou root peut remplacer le binaire ou
+le code ; l'Auth Gate complète le chiffrement disque et les permissions, il
+ne les remplace pas. Détail : `docs/SECURITY_INTELLIGENCE_LAB.md`.
+
+## 11. Évolutions
 
 - Vérification des correctifs de distribution avant « applicable confirmée ».
 - Corrélation actif → version → CVE → KEV/EPSS dans l'historique.

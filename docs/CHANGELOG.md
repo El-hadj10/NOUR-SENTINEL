@@ -1,5 +1,40 @@
 # NOUR SENTINEL — Changelog
 
+## [0.6.0-beta.1] — Security Intelligence Lab
+
+### Added
+- Auth Gate propriétaire Argon2id (`auth_gate.py`) : hash PHC uniquement, fichier 0600, dossier 0700, 3 tentatives avec temporisation, changement vérifié de l'ancien secret.
+- Contrôle d'accès Rust (`auth.rs`) exécuté avant la configuration, l'ARP et le TCP ; session locale 0600 plafonnée à 1 h.
+- CLI authentifié `inventory`, `full-local`, `fingerprint`, `tls`, `cve --online`.
+- Lanceur `lancer-nour-sentinel.sh` : venv, dépendances, Auth Gate, routes `--intel`, nettoyage de session.
+- Liste blanche `config/security_intelligence.json` limitée à `127.0.0.1` et `localhost`, refus avant sonde.
+- Inventaire dpkg/rpm, services systemd, sockets `ss`, familles locales (OpenSSH, Apache, nginx, Tor, Privoxy, Docker, bases, OpenSSL).
+- Sondes uniques : bannière SSH et HEAD HTTP sans redirection ni corps.
+- TLS 1.2/1.3 séparés, certificat via OpenSSL (sujet, émetteur, dates, SAN, auto-signature, expiration).
+- Politiques effectives `sshd -T`, `login.defs` et `common-password` PAM ; aucun secret lu.
+- Inventaire Docker read-only (`docker ps`) et publication de ports signalée.
+- Connecteurs OSV, NVD, CISA KEV et FIRST EPSS explicites, avec cache privé, budget de requêtes et refus des redirections.
+- Rapports JSON 0600 sous `data/reports/`, base `data/history/nour_sentinel_intel.db`, dossiers 0700.
+- Documentation `docs/SECURITY_INTELLIGENCE_LAB.md` et cahier des charges joint.
+
+### Security
+- Authentification avant toute opération Rust ou CLI ; sessions 0600 expirantes, symlinks refusés.
+- Aucun appel externe sans `--online` et `online.enabled`.
+- Aucun mot de passe, hash, clé privée ou journal brut collecté/exporté.
+- Aucune exploitation, aucun brute force, aucune remédiation automatique.
+
+### Validated
+- 47 tests Rust (7 scanner, 20 historique, 14 inventaire, 6 auth).
+- 145 tests Python dans le venv complet (10 tests d'auth ignorés sans argon2).
+- 8 tests d'intégration, dont 2 E2E avec session courte.
+- JSON valides, `bash -n` réussi, `--help`/`--version` vérifiés.
+- Exécution réelle : 2 569 paquets, 43 services, 14 sockets ; `full-local` produit 3 constats avec preuve.
+
+### Limitations connues
+- `sshd -T` complet et le processus d'un socket d'un autre utilisateur exigent des privilèges.
+- TLS 1.0/1.1 et STARTTLS ne sont pas testés ; un échec de négociation ne prouve pas l'absence de TLS.
+- Les résultats OSV/NVD restent `to_verify` tant que le correctif de distribution n'est pas vérifié.
+
 ## [0.5.0] — Security Intelligence
 
 ### Added

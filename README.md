@@ -14,10 +14,20 @@ combinant Rust, Python et SQLite.
 
 ## Versions
 
-**Version de référence : 0.5.0 — Security Intelligence**
+**Ligne stable de référence : 0.5.0 — Security Intelligence**
 
 Statut : les six capacités sont implémentées, testées hors ligne et
 documentées dans [`docs/SECURITY_INTELLIGENCE.md`](docs/SECURITY_INTELLIGENCE.md).
+
+**Laboratoire : 0.6.0-beta.1 — Security Intelligence Lab**
+
+Couche additive au-dessus de la v0.5.0 : authentification propriétaire,
+CLI `--intel`, liste blanche locale, connecteurs OSV/NVD/KEV/EPSS, rapports
+privés et base SQLite dédiée. Dossier complet :
+[`docs/SECURITY_INTELLIGENCE_LAB.md`](docs/SECURITY_INTELLIGENCE_LAB.md).
+
+Le laboratoire est volontairement séparé de la ligne stable ; aucun tag n'est
+déplacé et la fusion exige un rebasage puis un audit complet.
 
 Provenance :
 
@@ -26,6 +36,8 @@ Provenance :
 - v0.4.0 : historique SQLite transactionnel et détection de changements.
 - v0.5.0 : inventaire local, constats explicables et outils externes
   optionnels.
+- 0.6.0-beta.1 : Auth Gate Argon2id, lanceur, CLI authentifié, liste blanche,
+  collecteurs locaux et connecteurs externes explicites.
 
 ## Les six capacités
 
@@ -42,6 +54,28 @@ Chaque constat porte `finding_id`, `evidence`, `confidence`,
 `confidence_reason`, `severity`, `exposure`, `status` et
 `recommendation`. Une sévérité haute ou critique sans preuve est plafonnée à
 `medium` et signalée (`severity_capped`).
+
+## Laboratoire 0.6.0-beta.1
+
+```bash
+./lancer-nour-sentinel.sh --setup-deps   # venv + argon2-cffi
+./lancer-nour-sentinel.sh --setup-auth   # secret Argon2id initial
+./lancer-nour-sentinel.sh                # moteur Rust après authentification
+
+./lancer-nour-sentinel.sh --intel inventory
+./lancer-nour-sentinel.sh --intel full-local
+./lancer-nour-sentinel.sh --intel tls --target 127.0.0.1 --port 8443
+./lancer-nour-sentinel.sh --intel cve --online
+```
+
+- Le contrôle d'accès Rust s'exécute **avant** la configuration, l'ARP et le
+  TCP ; le CLI s'authentifie avant toute commande opérationnelle.
+- Les sondes actives sont limitées à `127.0.0.1` et `localhost`
+  (`config/security_intelligence.json`). `full-local` ne lance aucun réseau.
+- Rapports JSON en 0600 sous `data/reports/`, base
+  `data/history/nour_sentinel_intel.db`, dossiers en 0700.
+- OSV/NVD/KEV/EPSS ne sont jamais appelés implicitement : `--online` est
+  requis, avec cache et budget de requêtes.
 
 ## Outils externes optionnels
 
@@ -78,7 +112,8 @@ NOUR-SENTINEL/
 
 - Linux (`/proc`, `/sys`, table ARP)
 - Rust et Cargo
-- Python 3 (bibliothèque standard)
+- Python 3 (bibliothèque standard pour l'analyzer stable)
+- `python3-venv` et `argon2-cffi` pour le laboratoire (installés par le lanceur)
 - SQLite (inclus via `rusqlite`, feature `bundled`)
 - Optionnel : `nmap`, `testssl.sh`, `trivy`, `journalctl`, `iproute2`
 
@@ -88,7 +123,8 @@ NOUR-SENTINEL/
 cargo build --manifest-path rust-engine/Cargo.toml
 ```
 
-L'analyzer v0.5.0 n'a aucune dépendance Python.
+L'analyzer v0.5.0 n'a aucune dépendance Python. Le laboratoire installe
+`argon2-cffi` dans `.venv` via `./lancer-nour-sentinel.sh --setup-deps`.
 
 ## Configuration
 
@@ -162,13 +198,16 @@ La base se trouve par défaut dans `data/history/nour_sentinel.db`.
 ## Tests
 
 ```bash
-cargo test --manifest-path rust-engine/Cargo.toml   # 41 tests unitaires Rust
-python3 -m unittest discover -s tests/python        # 82 tests Python
-python3 -m unittest discover -s tests/integration   # 8 tests d'intégration
+cargo test --manifest-path rust-engine/Cargo.toml   # 47 tests unitaires Rust
+.venv/bin/python -m unittest discover -s tests/python # 145 tests Python (lab complet)
+python3 -m unittest discover -s tests/integration    # 8 tests d'intégration
 ```
 
 Les tests n'ouvrent aucune connexion externe : fixtures pour `nmap`,
-`testssl.sh`, `trivy` et journald ; historique et configuration temporaires.
+`testssl.sh`, `trivy`, journald, Docker, OSV/NVD/KEV/EPSS ; serveurs locaux
+éphémères pour SSH, HTTP et TLS ; historique, rapports et configuration
+temporaires. Sans `argon2-cffi`, 10 tests d'authentification sont ignorés
+(`145 tests exécutés, 10 ignorés`).
 
 ## Sécurité
 
@@ -196,3 +235,8 @@ disposez d'une autorisation explicite.
 - Les alertes issues des journaux sont des signaux à investiguer, pas des
   preuves de compromission.
 - La découverte ARP n'est pas encore reliée au scan TCP.
+- Le laboratoire exige des privilèges pour le processus d'un socket d'un autre
+  utilisateur et pour un `sshd -T` complet ; les erreurs sont conservées, pas
+  masquées.
+- Les connecteurs externes restent `to_verify` : aucun constat « applicable
+  confirmée » sans vérification du correctif de distribution.

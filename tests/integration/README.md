@@ -8,7 +8,7 @@ Les tests d'intégration ont pour objectif de vérifier le fonctionnement global
 
 Le scénario d'intégration repose sur les étapes suivantes :
 
-1. Rust charge la configuration (`config/settings.json` ou `NOUR_SENTINEL_CONFIG`).
+1. Rust vérifie la session propriétaire (`NOUR_SENTINEL_SESSION`) avant la configuration (`config/settings.json` ou `NOUR_SENTINEL_CONFIG`).
 2. Rust valide les paramètres de configuration.
 3. Rust effectue la collecte des observations réseau.
 4. Rust construit le message JSON.
@@ -31,7 +31,7 @@ Le scénario d'intégration repose sur les étapes suivantes :
 - pipeline complet TCP local → Rust → Python → SQLite → rapport final ;
 - deux scans successifs de périmètre identique, vérifiant la persistance réelle et la détection de l'ouverture d'un port (`state_changed`, `closed` → `open`).
 
-## 4. État actuel — v0.5.0
+## 4. État actuel — 0.6.0-beta.1
 
 - Chargement de la configuration : validé.
 - Validation des paramètres : validée.
@@ -57,6 +57,7 @@ Le scénario d'intégration repose sur les étapes suivantes :
 
 - La configuration de test est générée dans un répertoire temporaire et transmise via `NOUR_SENTINEL_CONFIG` ; `config/settings.json` n'est jamais modifié.
 - L'historique est redirigé via `NOUR_SENTINEL_HISTORY_DIR` vers un répertoire temporaire : la base du développeur (`data/history/nour_sentinel.db`) n'est ni lue ni modifiée.
+- Une session temporaire 0600 (`expires_at` + 300 s, sans secret) est fournie via `NOUR_SENTINEL_SESSION` : elle équivaut à un lancement authentifié et n'ouvre aucun privilège supplémentaire.
 - La cible est limitée à `127.0.0.1` et le port TCP est éphémère (`bind 127.0.0.1:0`) : aucun port fixe n'est ouvert et aucun trafic ne quitte la machine.
 - Le serveur temporaire et le répertoire de test sont nettoyés même en cas d'échec.
 

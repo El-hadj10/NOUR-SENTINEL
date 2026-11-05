@@ -1,4 +1,5 @@
 
+mod auth;
 mod inventory;
 mod scanner;
 mod history;
@@ -148,6 +149,10 @@ fn run() -> Result<(), String> {
         .parent()
         .ok_or("Project root not found")?
         .to_path_buf();
+
+    // Contrôle d'accès propriétaire AVANT toute configuration, lecture ARP
+    // ou tentative TCP (0.6.0-beta.1).
+    auth::enforce(&root)?;
 
     // Chargement de la configuration.
     let config_path = match std::env::var("NOUR_SENTINEL_CONFIG") {
