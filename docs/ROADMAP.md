@@ -45,6 +45,21 @@
 - [x] Recommandations de sécurité enrichies par port.
 - [x] Chaque finding inclut `recommendation` et `risk_level`.
 
+## VERSION 0.4.1 — Consolidation & Reliability
+
+- [x] Erreurs d'historique explicites et propagées au rapport.
+- [x] Clés étrangères SQLite activées et testées.
+- [x] Validation des ports reçus et stockés (refus, pas troncature).
+- [x] Propagation des erreurs de système de fichiers.
+- [x] Migration de schéma via `PRAGMA user_version`.
+- [x] Périmètre (cibles + ports) enregistré avec chaque scan.
+- [x] Comparaison limitée aux scans de périmètre identique.
+- [x] Signalement des changements de périmètre (`scope_changed`).
+- [x] Isolation des tests via `NOUR_SENTINEL_HISTORY_DIR`.
+- [x] Tests : clé étrangère, port invalide, base corrompue, migration, périmètre.
+- [x] README dédoublonné et documentation des 23 tests Rust.
+- [x] Statut de l'historique exposé dans le rapport JSON.
+
 ## VERSION 0.5.0 — Dashboard
 
 - [ ] Interface utilisateur.

@@ -1,5 +1,38 @@
 # NOUR SENTINEL — Changelog
 
+## [0.4.1] — Consolidation & Reliability
+
+### Added
+- Variable `NOUR_SENTINEL_HISTORY_DIR` pour rediriger la base d'historique.
+- `ScanScope` : le périmètre réel (cibles + ports) est enregistré avec chaque scan.
+- `detect_scan_changes` : comparaison limitée aux scans de périmètre identique, avec indicateur `scope_changed`.
+- Bloc `history` dans le rapport JSON (`recorded`, `not_recorded`, `unavailable`).
+- Migration automatique du schéma (`PRAGMA user_version`, colonnes de périmètre).
+- 8 tests Rust supplémentaires : 16 tests d'historique, 23 au total.
+
+### Changed
+- Erreurs d'historique explicites (`HistoryError`) : plus aucune erreur d'initialisation, d'écriture ou de comparaison n'est ignorée dans `main.rs`.
+- `PRAGMA foreign_keys = ON` et `busy_timeout` activés à l'ouverture de la base.
+- Conversion des ports validée (`1..=65535`) avant écriture et à la lecture : refus explicite au lieu d'une troncature.
+- Les erreurs de création du répertoire d'historique sont propagées.
+- Le test de bout en bout utilise un répertoire d'historique temporaire.
+- README dédoublonné, 23 tests Rust documentés, format de `config/settings.json` harmonisé.
+
+### Fixed
+- Une différence de périmètre n'est plus interprétée comme une apparition ou une disparition de service.
+- Un scan pouvait être annoncé enregistré alors que l'écriture avait échoué.
+- L'archive de distribution ne contient ni `target/`, ni base d'historique, ni archive imbriquée.
+
+### Validated
+- 23 tests unitaires Rust réussis.
+- 7 tests unitaires Python réussis.
+- 6 tests d'intégration réussis.
+- Pipeline réel Rust → Python → SQLite → rapport JSON réussi.
+
+### Limitations connues
+- La comparaison porte sur deux scans consécutifs de périmètre identique ; l'analyse multi-scans n'est pas déployée.
+- Un changement de périmètre est signalé mais non comparé.
+
 ## [0.4.0] — Behavioral Intelligence & Persistence
 
 ### Added
@@ -26,7 +59,7 @@
 ### Security
 - La découverte ARP reste passive.
 - Les actions de sécurité automatiques restent interdites.
-- L'historique est stocké localement dans `data/history/` et exclu des archives.
+- L'historique est stocké localement dans `data/history/` et exclu de l'archive de distribution.
 
 ### Limitations connues
 - La détection de changements compare uniquement deux scans consécutifs.

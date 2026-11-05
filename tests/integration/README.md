@@ -15,7 +15,8 @@ Le scénario d'intégration repose sur les étapes suivantes :
 5. Rust transmet les données au moteur Python via stdin.
 6. Python analyse les événements.
 7. Python retourne un rapport JSON via stdout.
-8. Rust vérifie et affiche le résultat.
+8. Rust enregistre le scan dans SQLite et compare le périmètre au scan précédent.
+9. Rust vérifie et affiche le résultat.
 
 ## 3. Fichiers de test
 
@@ -25,9 +26,9 @@ Le scénario d'intégration repose sur les étapes suivantes :
 
 `test_end_to_end.py`
 
-1 test de bout en bout : compilation du véritable binaire Rust, ouverture d'un serveur TCP local temporaire, exécution du moteur complet et vérification du rapport final.
+1 test de bout en bout : compilation du véritable binaire Rust, ouverture d'un serveur TCP local temporaire, exécution du moteur complet et vérification du rapport final, y compris le statut de l'historique.
 
-## 4. État actuel — v0.4.0
+## 4. État actuel — v0.4.1
 
 - Chargement de la configuration : validé.
 - Validation des paramètres : validée.
@@ -35,6 +36,7 @@ Le scénario d'intégration repose sur les étapes suivantes :
 - Transmission JSON : validée.
 - Analyse Python : validée par tests unitaires et d'intégration.
 - Vérification de la réponse JSON : validée.
+- Enregistrement de l'historique : validé (`history.status == "recorded"`).
 - Tests automatisés d'intégration : 6 tests, 6 réussis.
 
 ## 5. Scénarios couverts
@@ -44,13 +46,14 @@ Le scénario d'intégration repose sur les étapes suivantes :
 - Port fermé : aucune alerte produite.
 - Rejet d'une entrée JSON invalide.
 - Absence de message parasite dans `stdout` Python.
-- Pipeline complet Rust → TCP local → Python → rapport de sécurité.
+- Pipeline complet Rust → TCP local → Python → historique SQLite → rapport de sécurité.
 
 ## 6. Isolation des tests
 
 - La configuration de test est générée dans un répertoire temporaire et transmise via `NOUR_SENTINEL_CONFIG` ; `config/settings.json` n'est jamais modifié.
+- L'historique est redirigé via `NOUR_SENTINEL_HISTORY_DIR` vers un répertoire temporaire : la base du développeur (`data/history/nour_sentinel.db`) n'est ni lue ni modifiée.
 - La cible est limitée à `127.0.0.1` et le port TCP est éphémère (`bind 127.0.0.1:0`) : aucun port fixe n'est ouvert et aucun trafic ne quitte la machine.
-- Le serveur temporaire est fermé dans un bloc `finally`, même en cas d'échec.
+- Le serveur temporaire et le répertoire de test sont nettoyés même en cas d'échec.
 
 ## 7. Sécurité
 
@@ -63,5 +66,6 @@ Aucun scan automatique non autorisé et aucune action automatique de sécurité 
 - Intégration contrôlée ARP → TCP, explicitement activée par la configuration.
 - Validation sur plusieurs environnements Linux.
 - Tests de résistance aux défaillances du moteur Python (binaire absent, arrêt brutal).
+- Tests de transaction interrompue et de base corrompue au niveau intégration.
 
 **NOUR SENTINEL — Integration Testing**

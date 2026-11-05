@@ -50,7 +50,7 @@ class TestEndToEnd(unittest.TestCase):
             test_config = {
                 "application": {
                     "name": "NOUR SENTINEL",
-                    "version": "0.4.0",
+                    "version": "0.4.1",
                     "environment": "integration-test"
                 },
                 "engines": {
@@ -95,6 +95,11 @@ class TestEndToEnd(unittest.TestCase):
                 environment = os.environ.copy()
                 environment["NOUR_SENTINEL_CONFIG"] = str(config_path)
 
+                # Isolation stricte de l'historique : la base du développeur
+                # n'est jamais utilisée ni modifiée par les tests.
+                history_dir = Path(temp_dir) / "history"
+                environment["NOUR_SENTINEL_HISTORY_DIR"] = str(history_dir)
+
                 # Exécution du véritable moteur Rust.
                 process = subprocess.run(
                     [str(BINARY)],
@@ -125,7 +130,7 @@ class TestEndToEnd(unittest.TestCase):
 
                 # Vérification du rapport produit par Python.
                 self.assertEqual(report["engine"], "NOUR SENTINEL")
-                self.assertEqual(report["version"], "0.4.0")
+                self.assertEqual(report["version"], "0.4.1")
                 self.assertEqual(
                     report["status"],
                     "analysis_completed"
@@ -151,8 +156,14 @@ class TestEndToEnd(unittest.TestCase):
                 self.assertEqual(finding["severity"], "info")
 
                 self.assertIn(
-                    "[SUCCESS] NOUR SENTINEL v0.4.0 operational.",
+                    "[SUCCESS] NOUR SENTINEL v0.4.1 operational.",
                     process.stdout
+                )
+
+                # L'historique a bien été enregistré, dans le répertoire isolé.
+                self.assertEqual(report["history"]["status"], "recorded")
+                self.assertTrue(
+                    (history_dir / "nour_sentinel.db").exists()
                 )
 
         finally:

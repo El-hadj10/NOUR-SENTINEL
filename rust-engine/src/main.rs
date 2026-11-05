@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::Write;
 use std::net::IpAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 #[derive(Deserialize)]
@@ -261,49 +261,11 @@ fn run() -> Result<(), String> {
     let mut result: Value = serde_json::from_slice(&output.stdout)
         .map_err(|error| format!("Invalid Python JSON response: {}", error))?;
 
-    // Historique et détection de changements (v0.4.0)
-    if let Ok(conn) = history::init_db(&root) {
-        println!("[RUST] Behavioral intelligence: tracking history...");
-        
-        // Ajouter les événements au rapport pour sauvegarde
-        if let Some(obj) = result.as_object_mut() {
-            obj.insert("events".to_string(), serde_json::to_value(&events).unwrap_or(json!([])));
-        }
-        
-        if let Ok(scan_id) = history::save_scan(&conn, &settings.network.targets, &result) {
-            println!("[RUST] Scan recorded in history (ID: {}).", scan_id);
-            
-            if let Ok(changes) = history::detect_changes(&conn, scan_id) {
-                if !changes.is_empty() {
-                    println!("\n[BEHAVIORAL] Changes detected since last scan:");
-                    for change in &changes {
-                        match &change.change_type {
-                            history::ChangeType::New => {
-                                println!("  [NEW] {}:{} is now open", change.ip, change.port)
-                            }
-                            history::ChangeType::Removed => {
-                                println!("  [REMOVED] {}:{} no longer observed as open", change.ip, change.port)
-                            }
-                            history::ChangeType::StateChanged => println!(
-                                "  [CHANGED] {}:{} {} -> {}",
-                                change.ip,
-                                change.port,
-                                change.previous_state.as_deref().unwrap_or("unknown"),
-                                change.current_state.as_deref().unwrap_or("unknown")
-                            ),
-                        }
-                    }
-                    println!();
-                    
-                    if let Some(obj) = result.as_object_mut() {
-                        obj.insert("behavioral_changes".to_string(), serde_json::to_value(&changes).unwrap_or(json!([])));
-                    }
-                } else {
-                    println!("[BEHAVIORAL] No changes detected since last scan.");
-                }
-            }
-        }
-    }
+    // Historique et détection de changements (v0.4.1).
+    // Le périmètre réellement vérifié conditionne la comparaison historique.
+    let scope = history::ScanScope::new(&settings.network.targets, &settings.network.ports);
+
+    record_history(&root, &scope, &events, &mut result);
 
     println!("\n[RUST] Security report:\n");
 
@@ -320,6 +282,119 @@ fn run() -> Result<(), String> {
     );
 
     Ok(())
+}
+
+/// Enregistre le scan et expose explicitement l'état de l'historique dans le
+/// rapport : aucune panne de stockage n'est masquée par un message de succès.
+fn record_history(root: &Path, scope: &history::ScanScope, events: &[Value], result: &mut Value) {
+    if let Some(obj) = result.as_object_mut() {
+        obj.insert(
+            "events".to_string(),
+            serde_json::to_value(events).unwrap_or(json!([])),
+        );
+    }
+
+    let conn = match history::init_db(root) {
+        Ok(conn) => conn,
+        Err(error) => {
+            eprintln!("[WARNING] History unavailable: {}", error);
+            set_history_status(
+                result,
+                json!({ "status": "unavailable", "error": error.to_string() }),
+            );
+            return;
+        }
+    };
+
+    println!("[RUST] Behavioral intelligence: tracking history...");
+
+    let scan_id = match history::save_scan(&conn, scope, result) {
+        Ok(scan_id) => scan_id,
+        Err(error) => {
+            eprintln!("[WARNING] Scan not recorded in history: {}", error);
+            set_history_status(
+                result,
+                json!({ "status": "not_recorded", "error": error.to_string() }),
+            );
+            return;
+        }
+    };
+
+    println!("[RUST] Scan recorded in history (ID: {}).", scan_id);
+
+    let comparison = match history::detect_scan_changes(&conn, scan_id) {
+        Ok(comparison) => comparison,
+        Err(error) => {
+            eprintln!("[WARNING] Behavioral comparison failed: {}", error);
+            set_history_status(
+                result,
+                json!({ "status": "recorded", "scan_id": scan_id, "error": error.to_string() }),
+            );
+            return;
+        }
+    };
+
+    if comparison.scope_changed {
+        println!(
+            "[BEHAVIORAL] Scan scope changed: comparison limited to an identical scope."
+        );
+    }
+
+    print_changes(&comparison.changes);
+
+    if let Some(obj) = result.as_object_mut() {
+        obj.insert(
+            "behavioral_changes".to_string(),
+            serde_json::to_value(&comparison.changes).unwrap_or(json!([])),
+        );
+        obj.insert("scope_changed".to_string(), json!(comparison.scope_changed));
+    }
+
+    set_history_status(
+        result,
+        json!({
+            "status": "recorded",
+            "scan_id": scan_id,
+            "previous_scan_id": comparison.previous_scan_id,
+            "scope_changed": comparison.scope_changed
+        }),
+    );
+}
+
+fn set_history_status(result: &mut Value, status: Value) {
+    if let Some(obj) = result.as_object_mut() {
+        obj.insert("history".to_string(), status);
+    }
+}
+
+fn print_changes(changes: &[history::BehavioralChange]) {
+    if changes.is_empty() {
+        println!("[BEHAVIORAL] No changes detected since last comparable scan.");
+        return;
+    }
+
+    println!("\n[BEHAVIORAL] Changes detected since last comparable scan:");
+
+    for change in changes {
+        match &change.change_type {
+            history::ChangeType::New => {
+                println!("  [NEW] {}:{} is now open", change.ip, change.port)
+            }
+            history::ChangeType::Removed => println!(
+                "  [REMOVED] {}:{} no longer observed as open",
+                change.ip, change.port
+            ),
+            history::ChangeType::StateChanged => println!(
+                "  [CHANGED] {}:{} {} -> {}",
+                change.ip,
+                change.port,
+                change.previous_state.as_deref().unwrap_or("unknown"),
+                change.current_state.as_deref().unwrap_or("unknown")
+            ),
+        }
+    }
+
+    println!();
 }
 
 fn main() {
