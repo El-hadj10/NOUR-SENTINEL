@@ -22,6 +22,18 @@
         "engine": "NOUR SENTINEL",
         "version": "0.4.1",
         "status": "analysis_completed",
-        "findings": []
+        "findings": [
+            {
+                "ip": "192.168.1.10",
+                "port": 3389,
+                "service": "RDP",
+                "severity": "warning",
+                "confidence": "low",
+                "evidence": "port_open",
+                "message": "Exposition observée : service présumé RDP sur 192.168.1.10:3389",
+                "recommendation": "Utiliser un VPN, activer NLA, limiter par IP.",
+                "risk_level": "warning"
+            }
+        ]
     }
 }

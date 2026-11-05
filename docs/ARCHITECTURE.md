@@ -74,8 +74,9 @@ Emplacement de la base :
 
 ## 7. Sécurité
 
-- Aucune action automatique de blocage.
-- Analyse passive des données fournies.
+- Découverte ARP strictement passive (lecture de `/proc/net/arp`).
+- Vérification TCP active, limitée aux cibles IP explicitement configurées.
+- Aucune action automatique de blocage ou de remédiation.
 - Utilisation sur des réseaux autorisés.
 - Validation des entrées (adresses IP, ports, JSON).
 - Gestion des erreurs explicite.

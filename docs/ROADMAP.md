@@ -35,7 +35,7 @@
 - [x] Test de bout en bout Rust → Python.
 - [x] Configuration temporaire pour les tests.
 - [ ] Intégration contrôlée ARP/TCP.
-- [ ] Audit final et publication de la version.
+- [x] Audit final et publication de la version.
 
 ## VERSION 0.4.0 — Behavioral Intelligence & Persistence
 
@@ -56,8 +56,12 @@
 - [x] Comparaison limitée aux scans de périmètre identique.
 - [x] Signalement des changements de périmètre (`scope_changed`).
 - [x] Isolation des tests via `NOUR_SENTINEL_HISTORY_DIR`.
-- [x] Tests : clé étrangère, port invalide, base corrompue, migration, périmètre.
-- [x] README dédoublonné et documentation des 23 tests Rust.
+- [x] Tests : clé étrangère, port, IP, état invalides, base corrompue, migration, périmètre.
+- [x] Validation des états observés avant écriture et après lecture.
+- [x] Plafond de concurrence (256) et rejet explicite du port 0.
+- [x] Sémantique des findings : exposition observée, confiance `low`, preuve `port_open`.
+- [x] Test E2E de deux scans successifs (persistance et ouverture détectée).
+- [x] README dédoublonné et documentation des 27 tests Rust.
 - [x] Statut de l'historique exposé dans le rapport JSON.
 
 ## VERSION 0.5.0 — Dashboard

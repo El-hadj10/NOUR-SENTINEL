@@ -38,6 +38,13 @@ class TestDetector(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["severity"], "warning")
 
+        # Un port d'écoute n'est pas une vulnérabilité prouvée.
+        self.assertEqual(results[0]["confidence"], "low")
+        self.assertEqual(results[0]["evidence"], "port_open")
+        self.assertIn("Exposition observée", results[0]["message"])
+        self.assertIn("service présumé", results[0]["message"])
+        self.assertNotIn("[CRITIQUE]", results[0]["recommendation"])
+
     def test_normal_port(self):
         events = [{
             "type": "port_observed",
@@ -92,6 +99,7 @@ class TestDetector(unittest.TestCase):
         results = detect_threats(events, custom_config)
 
         self.assertEqual(results[0]["severity"], "warning")
+        self.assertEqual(results[0]["confidence"], "low")
 
     def test_invalid_port(self):
         events = [{

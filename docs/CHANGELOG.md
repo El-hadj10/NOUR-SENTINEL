@@ -8,7 +8,10 @@
 - `detect_scan_changes` : comparaison limitée aux scans de périmètre identique, avec indicateur `scope_changed`.
 - Bloc `history` dans le rapport JSON (`recorded`, `not_recorded`, `unavailable`).
 - Migration automatique du schéma (`PRAGMA user_version`, colonnes de périmètre).
-- 8 tests Rust supplémentaires : 16 tests d'historique, 23 au total.
+- Validation des adresses IP et des états observés, avant écriture comme après lecture.
+- Plafond de concurrence (256) et rejet explicite du port 0 dans la configuration.
+- Sémantique des findings clarifiée : « exposition observée », `confidence: low`, `evidence: port_open`.
+- 12 tests Rust supplémentaires : 20 tests d'historique, 27 au total.
 
 ### Changed
 - Erreurs d'historique explicites (`HistoryError`) : plus aucune erreur d'initialisation, d'écriture ou de comparaison n'est ignorée dans `main.rs`.
@@ -24,10 +27,11 @@
 - L'archive de distribution ne contient ni `target/`, ni base d'historique, ni archive imbriquée.
 
 ### Validated
-- 23 tests unitaires Rust réussis.
+- 27 tests unitaires Rust réussis.
 - 7 tests unitaires Python réussis.
-- 6 tests d'intégration réussis.
+- 7 tests d'intégration réussis.
 - Pipeline réel Rust → Python → SQLite → rapport JSON réussi.
+- Deux scans successifs comparés en E2E : ouverture d'un port détectée (`state_changed`), base isolée.
 
 ### Limitations connues
 - La comparaison porte sur deux scans consécutifs de périmètre identique ; l'analyse multi-scans n'est pas déployée.

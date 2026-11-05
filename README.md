@@ -68,7 +68,7 @@ La configuration se trouve dans `config/settings.json`. Les paramètres principa
 | `network` | `targets` | Adresses IP explicitement autorisées |
 | `network` | `ports` | Ports TCP vérifiés (définit le périmètre) |
 | `network` | `timeout_ms` | Délai de connexion par port |
-| `network` | `max_concurrency` | Nombre maximal de workers |
+| `network` | `max_concurrency` | Nombre maximal de workers (plafond 256) |
 | `analysis` | `sensitive_ports` | Ports déclenchant une alerte |
 | `security` | `authorized_scanning_only`, `automatic_actions` | Garde-fous obligatoires |
 
@@ -110,9 +110,9 @@ La base se trouve par défaut dans `data/history/nour_sentinel.db` et n'est pas 
 ## Tests
 
 ```bash
-cargo test --manifest-path rust-engine/Cargo.toml   # 23 tests unitaires Rust
+cargo test --manifest-path rust-engine/Cargo.toml   # 27 tests unitaires Rust
 python3 -m unittest discover -s tests/python         # 7 tests unitaires Python
-python3 -m unittest discover -s tests/integration    # 6 tests d'intégration
+python3 -m unittest discover -s tests/integration    # 7 tests d'intégration
 ```
 
 Les tests d'intégration compilent le véritable binaire Rust et utilisent un serveur TCP local temporaire sur `127.0.0.1`. La configuration et l'historique sont placés dans des répertoires temporaires.
@@ -124,10 +124,12 @@ Utiliser cet outil uniquement sur des systèmes et réseaux pour lesquels vous d
 Garanties appliquées par le moteur :
 
 - la découverte ARP est strictement passive (lecture de `/proc/net/arp`) ;
+- la vérification TCP est active, mais uniquement vers les cibles IP explicitement déclarées ;
 - le scan des appareils découverts par ARP est refusé au démarrage tant qu'il n'est pas implémenté ;
 - les actions de sécurité automatiques sont interdites et refusées au démarrage ;
 - chaque cible doit être une adresse IP littérale déclarée dans la configuration ;
-- les ports enregistrés sont validés (`1..=65535`) avant toute écriture.
+- les ports enregistrés sont validés (`1..=65535`) avant toute écriture ;
+- un port ouvert est présenté comme une exposition observée, jamais comme une vulnérabilité confirmée.
 
 ## Limites connues
 

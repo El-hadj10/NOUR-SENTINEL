@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::env;
 use std::fmt;
 use std::fs;
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -232,6 +233,28 @@ fn ensure_column(conn: &Connection, table: &str, column: &str, definition: &str)
     Ok(())
 }
 
+/// États d'observation acceptés : ceux produits par le scanner.
+const VALID_STATES: [&str; 3] = ["open", "closed", "filtered_or_unreachable"];
+
+/// Valide une observation avant enregistrement et après lecture.
+fn validate_event(ip: &str, port: u16, state: &str) -> Result<()> {
+    ip.parse::<IpAddr>()
+        .map_err(|_| HistoryError::InvalidData(format!("invalid event ip: {}", ip)))?;
+
+    if port == 0 {
+        return Err(HistoryError::InvalidData("event port 0 is not valid".into()));
+    }
+
+    if !VALID_STATES.contains(&state) {
+        return Err(HistoryError::InvalidData(format!(
+            "invalid event state: {}",
+            state
+        )));
+    }
+
+    Ok(())
+}
+
 /// Enregistre un scan et ses événements dans une transaction atomique.
 /// Les événements sont validés avant toute écriture : en cas de donnée
 /// invalide, rien n'est enregistré et l'erreur est retournée.
@@ -264,13 +287,11 @@ pub fn save_scan(conn: &Connection, scope: &ScanScope, report: &Value) -> Result
                 HistoryError::InvalidData(format!("event port out of range: {}", raw_port))
             })?;
 
-            if port == 0 {
-                return Err(HistoryError::InvalidData("event port 0 is not valid".into()));
-            }
-
             let state = event["state"]
                 .as_str()
                 .ok_or_else(|| HistoryError::InvalidData("event without state".into()))?;
+
+            validate_event(ip, port, state)?;
 
             events.push((ip, port, state));
         }
@@ -326,8 +347,13 @@ fn load_states(conn: &Connection, scan_id: i64) -> Result<HashMap<(String, u16),
     let mut states = HashMap::new();
 
     for row in rows {
-        let (key, state) = row?;
-        states.insert(key, state);
+        let ((ip, port), state) = row?;
+
+        // Les données relues sont validées comme celles écrites : une base
+        // modifiée à la main ne doit pas produire d'analyse silencieuse.
+        validate_event(&ip, port, &state)?;
+
+        states.insert((ip, port), state);
     }
 
     Ok(states)
@@ -663,6 +689,63 @@ mod tests {
     }
 
     #[test]
+    fn invalid_event_ip_is_rejected_without_writing() {
+        let root = temp_root("invalid_ip");
+        let conn = init_db(&root).unwrap();
+
+        let invalid = json!({
+            "network": { "open_ports": 1 },
+            "findings_count": 0,
+            "events": [{ "ip": "not-an-ip", "port": 22, "state": "open" }],
+        });
+
+        assert!(save_scan(&conn, &scope(&[22]), &invalid).is_err());
+
+        let scans: i64 = conn
+            .query_row("SELECT COUNT(*) FROM scans", [], |row| row.get(0))
+            .unwrap();
+
+        assert_eq!(scans, 0, "aucune écriture partielle ne doit subsister");
+    }
+
+    #[test]
+    fn invalid_event_state_is_rejected_without_writing() {
+        let root = temp_root("invalid_state");
+        let conn = init_db(&root).unwrap();
+
+        let invalid = json!({
+            "network": { "open_ports": 0 },
+            "findings_count": 0,
+            "events": [{ "ip": "127.0.0.1", "port": 22, "state": "probably_open" }],
+        });
+
+        assert!(save_scan(&conn, &scope(&[22]), &invalid).is_err());
+
+        let scans: i64 = conn
+            .query_row("SELECT COUNT(*) FROM scans", [], |row| row.get(0))
+            .unwrap();
+
+        assert_eq!(scans, 0, "aucune écriture partielle ne doit subsister");
+    }
+
+    #[test]
+    fn invalid_stored_state_is_reported() {
+        let root = temp_root("invalid_stored_state");
+        let conn = init_db(&root).unwrap();
+        let scan_id = insert_legacy_scan(&conn);
+
+        conn.execute(
+            "INSERT INTO scan_events (scan_id, ip, port, state)
+             VALUES (?1, '127.0.0.1', 22, 'probably_open')",
+            params![scan_id],
+        )
+        .unwrap();
+
+        // Lecture : un état inconnu est refusé, pas interprété.
+        assert!(load_states(&conn, scan_id).is_err());
+    }
+
+    #[test]
     fn first_scan_has_no_changes() {
         let root = temp_root("first");
         let conn = init_db(&root).unwrap();
@@ -802,6 +885,33 @@ mod tests {
             &conn,
             &scope(&[22, 443]),
             &report(&[("127.0.0.1", 22, "open"), ("127.0.0.1", 443, "open")]),
+        )
+        .unwrap();
+
+        let comparison = detect_scan_changes(&conn, second).unwrap();
+
+        assert!(comparison.scope_changed);
+        assert_eq!(comparison.previous_scan_id, None);
+        assert!(comparison.changes.is_empty());
+    }
+
+    #[test]
+    fn target_change_is_not_a_service_change() {
+        let root = temp_root("target_change");
+        let conn = init_db(&root).unwrap();
+
+        save_scan(
+            &conn,
+            &scope(&[22]),
+            &report(&[("127.0.0.1", 22, "open")]),
+        )
+        .unwrap();
+
+        // Nouvelle cible : le périmètre change, aucun service n'apparaît.
+        let second = save_scan(
+            &conn,
+            &ScanScope::new(&["127.0.0.2".to_string()], &[22]),
+            &report(&[("127.0.0.2", 22, "open")]),
         )
         .unwrap();
 

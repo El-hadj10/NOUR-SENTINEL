@@ -10,6 +10,9 @@ use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+/// Plafond de concurrence : protège des configurations accidentelles.
+const MAX_CONCURRENCY: usize = 256;
+
 #[derive(Deserialize)]
 struct Settings {
     application: ApplicationSettings,
@@ -109,6 +112,17 @@ fn validate_settings(settings: &Settings) -> Result<(), String> {
         return Err("Maximum concurrency must be greater than zero".into());
     }
 
+    if settings.network.max_concurrency > MAX_CONCURRENCY {
+        return Err(format!(
+            "Maximum concurrency must not exceed {}",
+            MAX_CONCURRENCY
+        ));
+    }
+
+    if settings.network.ports.contains(&0) {
+        return Err("Port 0 is not a valid TCP port".into());
+    }
+
     // Vérification des adresses IP.
     for target in &settings.network.targets {
         target
@@ -147,6 +161,10 @@ fn run() -> Result<(), String> {
         .map_err(|error| format!("Invalid configuration: {}", error))?;
 
     validate_settings(&settings)?;
+
+    // Périmètre réellement vérifié : cibles et ports dédupliqués et triés.
+    // Il sert à la fois au scan et à la comparaison historique.
+    let scope = history::ScanScope::new(&settings.network.targets, &settings.network.ports);
 
     println!("====================================");
     println!(
@@ -190,8 +208,8 @@ fn run() -> Result<(), String> {
     );
 
     let observations = scanner::scan_tcp_ports(
-        &settings.network.targets,
-        &settings.network.ports,
+        scope.targets(),
+        scope.ports(),
         settings.network.timeout_ms,
         settings.network.max_concurrency,
     );
@@ -262,9 +280,6 @@ fn run() -> Result<(), String> {
         .map_err(|error| format!("Invalid Python JSON response: {}", error))?;
 
     // Historique et détection de changements (v0.4.1).
-    // Le périmètre réellement vérifié conditionne la comparaison historique.
-    let scope = history::ScanScope::new(&settings.network.targets, &settings.network.ports);
-
     record_history(&root, &scope, &events, &mut result);
 
     println!("\n[RUST] Security report:\n");

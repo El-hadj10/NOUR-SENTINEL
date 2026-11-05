@@ -26,7 +26,10 @@ Le scénario d'intégration repose sur les étapes suivantes :
 
 `test_end_to_end.py`
 
-1 test de bout en bout : compilation du véritable binaire Rust, ouverture d'un serveur TCP local temporaire, exécution du moteur complet et vérification du rapport final, y compris le statut de l'historique.
+2 tests de bout en bout, avec le véritable binaire Rust et un répertoire d'historique temporaire :
+
+- pipeline complet TCP local → Rust → Python → SQLite → rapport final ;
+- deux scans successifs de périmètre identique, vérifiant la persistance réelle et la détection de l'ouverture d'un port (`state_changed`, `closed` → `open`).
 
 ## 4. État actuel — v0.4.1
 
@@ -37,7 +40,7 @@ Le scénario d'intégration repose sur les étapes suivantes :
 - Analyse Python : validée par tests unitaires et d'intégration.
 - Vérification de la réponse JSON : validée.
 - Enregistrement de l'historique : validé (`history.status == "recorded"`).
-- Tests automatisés d'intégration : 6 tests, 6 réussis.
+- Tests automatisés d'intégration : 7 tests, 7 réussis.
 
 ## 5. Scénarios couverts
 
@@ -47,6 +50,7 @@ Le scénario d'intégration repose sur les étapes suivantes :
 - Rejet d'une entrée JSON invalide.
 - Absence de message parasite dans `stdout` Python.
 - Pipeline complet Rust → TCP local → Python → historique SQLite → rapport de sécurité.
+- Deux scans comparés : port fermé puis ouvert, changement `state_changed` attendu, base interrogée directement.
 
 ## 6. Isolation des tests
 
@@ -66,6 +70,6 @@ Aucun scan automatique non autorisé et aucune action automatique de sécurité 
 - Intégration contrôlée ARP → TCP, explicitement activée par la configuration.
 - Validation sur plusieurs environnements Linux.
 - Tests de résistance aux défaillances du moteur Python (binaire absent, arrêt brutal).
-- Tests de transaction interrompue et de base corrompue au niveau intégration.
+- Test d'une base corrompue au niveau intégration.
 
 **NOUR SENTINEL — Integration Testing**
