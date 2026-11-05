@@ -2,39 +2,71 @@
 
 **Intelligent Network Security Engine**
 
-NOUR SENTINEL est un outil modulaire de diagnostic et d'analyse réseau combinant Rust et Python.
+NOUR SENTINEL est un outil modulaire de diagnostic réseau et de sécurité,
+combinant Rust, Python et SQLite.
 
-- **Rust** : collecte réseau, découverte ARP passive, vérification TCP concurrente et persistance de l'historique.
-- **Python** : analyse des observations, classification des services et détection des ports sensibles.
-- **SQLite** : conservation locale des scans et de leurs observations.
-- **JSON** : communication entre les deux moteurs via stdin/stdout.
+- **Rust** : collecte réseau (ARP passive, TCP concurrent), inventaire local
+  des sockets et persistance de l'historique.
+- **Python** : six capacités d'analyse — fingerprinting, CVE, TLS, politiques
+  d'authentification, journaux, applicatif HTTP.
+- **SQLite** : mémoire des scans et de leurs observations.
+- **JSON** : contrat versionné entre les deux moteurs (`protocol.json` 3.0).
 
-## Version actuelle
+## Versions
 
-**0.4.1 — Consolidation & Reliability**
+**Version de référence : 0.5.0 — Security Intelligence**
 
-Branche de développement : `feature/v0.4.1`
+Statut : les six capacités sont implémentées, testées hors ligne et
+documentées dans [`docs/SECURITY_INTELLIGENCE.md`](docs/SECURITY_INTELLIGENCE.md).
 
-Statut : v0.4.1 livrée (erreurs d'historique explicites, comparaison limitée aux scans de même périmètre, tests isolés, documentation harmonisée).
+Provenance :
 
-Provenance v0.4.0 :
+- v0.4.1 : erreurs d'historique explicites, comparaison de périmètre, tests
+  isolés.
+- v0.4.0 : historique SQLite transactionnel et détection de changements.
+- v0.5.0 : inventaire local, constats explicables et outils externes
+  optionnels.
 
-- Historique SQLite transactionnel.
-- Détection de changements à trois états (`open`, `closed`, `filtered_or_unreachable`).
-- Recommandations de sécurité par port.
+## Les six capacités
+
+| Pilier | Module Python | Ce qu'il produit |
+|---|---|---|
+| Fingerprinting | `intelligence/fingerprinting/` | Produit, version, service, confiance |
+| Intelligence CVE | `intelligence/vulnerabilities/` | Candidats `to_verify` + clients NVD/OSV/KEV/EPSS |
+| Audit TLS | `intelligence/tls/` | Protocoles, suites, certificats |
+| Mots de passe | `intelligence/passwords/` | `sshd_config`, `login.defs`, `sudoers` |
+| Intrusion | `intelligence/intrusion/` | Journald : échecs SSH, comptes, pare-feu |
+| Applicatif | `intelligence/applications/` | En-têtes, cookies, méthodes HTTP |
+
+Chaque constat porte `finding_id`, `evidence`, `confidence`,
+`confidence_reason`, `severity`, `exposure`, `status` et
+`recommendation`. Une sévérité haute ou critique sans preuve est plafonnée à
+`medium` et signalée (`severity_capped`).
+
+## Outils externes optionnels
+
+Désactivés par défaut (`tools.enabled: false`), exécutés sans shell,
+uniquement sur le périmètre autorisé :
+
+| Outil | Rôle | Configuration |
+|---|---|---|
+| `nmap` | détection de version (`-sV`) | `tools.nmap` |
+| `testssl.sh` | audit TLS et certificats | `tools.testssl` |
+| `trivy` | vulnérabilités d'images et de fichiers | `tools.trivy`, `tools.trivy_targets` |
+
+Un outil absent est signalé dans `errors` : l'analyse se poursuit.
 
 ## Architecture
 
 ```text
 NOUR-SENTINEL/
-├── rust-engine/       # Moteur réseau Rust (scanner + historique SQLite)
+├── rust-engine/       # Scanner TCP, ARP passif, inventaire, historique SQLite
+│   └── src/inventory.rs
 ├── python-brain/      # Analyse et détection Python
-├── communication/     # Contrat JSON
+│   └── intelligence/  # Six piliers + risk engine + adaptateurs d'outils
+├── communication/     # Contrat JSON versionné
 ├── config/            # Configuration
-├── data/
-│   ├── history/       # Historique des scans SQLite (non versionné)
-│   ├── logs/
-│   └── reports/
+├── data/              # Historique et artefacts (non versionnés)
 ├── tests/
 │   ├── python/
 │   ├── rust/
@@ -44,10 +76,11 @@ NOUR-SENTINEL/
 
 ## Prérequis
 
-- Linux (lecture de la table ARP `/proc/net/arp`)
+- Linux (`/proc`, `/sys`, table ARP)
 - Rust et Cargo
-- Python 3 (bibliothèque standard uniquement)
-- SQLite (bibliothèque C incluse via `rusqlite`, feature `bundled`)
+- Python 3 (bibliothèque standard)
+- SQLite (inclus via `rusqlite`, feature `bundled`)
+- Optionnel : `nmap`, `testssl.sh`, `trivy`, `journalctl`, `iproute2`
 
 ## Installation
 
@@ -55,84 +88,111 @@ NOUR-SENTINEL/
 cargo build --manifest-path rust-engine/Cargo.toml
 ```
 
-Aucune dépendance Python n'est à installer : le cerveau Python n'utilise que la bibliothèque standard.
+L'analyzer v0.5.0 n'a aucune dépendance Python.
 
 ## Configuration
 
-La configuration se trouve dans `config/settings.json`. Les paramètres principaux :
+`config/settings.json` :
 
 | Section | Paramètre | Rôle |
 |---|---|---|
 | `application` | `version` | Version affichée et reportée |
-| `engines.python` | `executable` | Interpréteur Python utilisé |
+| `engines.python` | `executable` | Interpréteur Python |
 | `network` | `targets` | Adresses IP explicitement autorisées |
-| `network` | `ports` | Ports TCP vérifiés (définit le périmètre) |
+| `network` | `ports` | Ports TCP vérifiés (périmètre) |
 | `network` | `timeout_ms` | Délai de connexion par port |
-| `network` | `max_concurrency` | Nombre maximal de workers (plafond 256) |
+| `network` | `max_concurrency` | Workers (plafond 256) |
 | `analysis` | `sensitive_ports` | Ports déclenchant une alerte |
-| `security` | `authorized_scanning_only`, `automatic_actions` | Garde-fous obligatoires |
+| `intelligence` | `local_inventory` | Inventaire `/proc` (activé par défaut) |
+| `intelligence` | `active_probing` | Vérifications réseau actives (désactivé) |
+| `intelligence` | `http_probe`, `tls_probe` | Sondes HTTP/TLS (désactivées) |
+| `intelligence` | `ssh_policy_audit` | Audit `sshd_config`/`login.defs` |
+| `intelligence` | `journal_audit`, `journal_lines` | Détection par journald |
+| `tools` | `enabled`, `nmap`, `testssl`, `trivy` | Outils externes |
+| `security` | `authorized_scanning_only`, `automatic_actions` | Garde-fous |
 
 Variables d'environnement :
 
-- `NOUR_SENTINEL_CONFIG` : chemin d'un fichier de configuration alternatif.
-- `NOUR_SENTINEL_HISTORY_DIR` : répertoire de la base d'historique (par défaut `data/history/`). Utilisé par les tests pour ne jamais toucher aux données réelles.
+- `NOUR_SENTINEL_CONFIG` : configuration alternative.
+- `NOUR_SENTINEL_HISTORY_DIR` : répertoire d'historique (tests).
 
 ## Exécution
-
-Depuis la racine du projet :
 
 ```bash
 cargo run --manifest-path rust-engine/Cargo.toml
 ```
 
-Une configuration alternative peut être utilisée sans modifier `config/settings.json` :
+Le rapport JSON final contient :
 
-```bash
-NOUR_SENTINEL_CONFIG=/chemin/vers/settings.json cargo run --manifest-path rust-engine/Cargo.toml
-```
+- `capabilities` : les six piliers exécutés ;
+- `inventory` : hôte, interfaces et sockets attribués (`pid`, `process`,
+  `unit`, `container`, `confidence`) ;
+- `services` : produits identifiés localement ;
+- `findings` : constats normalisés triés par `priority_score` ;
+- `risk_summary` : répartition par gravité, priorité et statut ;
+- `tools_used` et `errors` : outils réellement exécutés et échecs explicites ;
+- `history` : `recorded`, `not_recorded` ou `unavailable`.
 
-Le rapport JSON final contient un bloc `history` indiquant le résultat réel de la persistance :
+Exemple de constat :
 
 ```json
-"history": { "status": "recorded", "scan_id": 12, "previous_scan_id": 11, "scope_changed": false }
+{
+  "finding_id": "f-0123456789ab",
+  "check": "exposure.wildcard.22",
+  "observation": "Écoute sur l'interface générique (port 22)",
+  "evidence": "socket:0.0.0.0:22; pid=1234; process=sshd; unit=ssh.service",
+  "confidence": "confirmed",
+  "severity": "medium",
+  "exposure": "lan",
+  "status": "open",
+  "priority_score": 4.5,
+  "priority": "P2"
+}
 ```
-
-Valeurs possibles : `recorded`, `not_recorded` (erreur d'écriture) ou `unavailable` (base inaccessible). En cas d'échec, un avertissement est aussi écrit sur `stderr` : aucun succès n'est affiché alors que l'historique a échoué.
 
 ## Historique, sauvegarde et restauration
 
-La base se trouve par défaut dans `data/history/nour_sentinel.db` et n'est pas versionnée.
+La base se trouve par défaut dans `data/history/nour_sentinel.db`.
 
-- Sauvegarde : `cp data/history/nour_sentinel.db sauvegarde-nour.db` (ou `sqlite3 data/history/nour_sentinel.db ".backup sauvegarde-nour.db"`).
+- Sauvegarde : `cp data/history/nour_sentinel.db sauvegarde-nour.db`.
 - Restauration : arrêter le moteur, remplacer le fichier, relancer.
-- Compatibilité : une base v0.4.0 est migrée automatiquement (ajout des colonnes de périmètre) au premier démarrage de la v0.4.1.
+- Compatibilité : une base v0.4.0 est migrée automatiquement au premier
+  démarrage.
 
 ## Tests
 
 ```bash
-cargo test --manifest-path rust-engine/Cargo.toml   # 27 tests unitaires Rust
-python3 -m unittest discover -s tests/python         # 7 tests unitaires Python
-python3 -m unittest discover -s tests/integration    # 7 tests d'intégration
+cargo test --manifest-path rust-engine/Cargo.toml   # 41 tests unitaires Rust
+python3 -m unittest discover -s tests/python        # 82 tests Python
+python3 -m unittest discover -s tests/integration   # 8 tests d'intégration
 ```
 
-Les tests d'intégration compilent le véritable binaire Rust et utilisent un serveur TCP local temporaire sur `127.0.0.1`. La configuration et l'historique sont placés dans des répertoires temporaires.
+Les tests n'ouvrent aucune connexion externe : fixtures pour `nmap`,
+`testssl.sh`, `trivy` et journald ; historique et configuration temporaires.
 
 ## Sécurité
 
-Utiliser cet outil uniquement sur des systèmes et réseaux pour lesquels vous disposez d'une autorisation explicite.
+Utiliser cet outil uniquement sur des systèmes et réseaux pour lesquels vous
+disposez d'une autorisation explicite.
 
-Garanties appliquées par le moteur :
-
-- la découverte ARP est strictement passive (lecture de `/proc/net/arp`) ;
-- la vérification TCP est active, mais uniquement vers les cibles IP explicitement déclarées ;
-- le scan des appareils découverts par ARP est refusé au démarrage tant qu'il n'est pas implémenté ;
-- les actions de sécurité automatiques sont interdites et refusées au démarrage ;
-- chaque cible doit être une adresse IP littérale déclarée dans la configuration ;
-- les ports enregistrés sont validés (`1..=65535`) avant toute écriture ;
-- un port ouvert est présenté comme une exposition observée, jamais comme une vulnérabilité confirmée.
+- La découverte ARP est strictement passive (`/proc/net/arp`).
+- La vérification TCP est active, uniquement vers les cibles déclarées.
+- Les vérifications actives d'intelligence et les outils externes sont
+  désactivés par défaut et limités au périmètre autorisé.
+- Aucune exploitation, aucun brute force, aucune collecte de secrets.
+- Aucun blocage automatique, aucune remédiation automatique.
+- Un port ouvert est une exposition présumée, jamais une vulnérabilité
+  confirmée.
+- Une alerte haute ou critique sans preuve est plafonnée à `medium`.
 
 ## Limites connues
 
-- La comparaison historique porte sur deux scans de périmètre identique ; l'analyse multi-scans n'est pas implémentée.
-- Un changement de périmètre est signalé (`scope_changed`) mais n'est pas comparé : aucune apparition ni disparition n'est déduite d'un périmètre différent.
+- La base CVE embarquée est réduite et hors ligne ; les statuts restent
+  `to_verify` tant que les correctifs de distribution ne sont pas vérifiés.
+- L'attribution d'un socket d'un autre utilisateur exige des privilèges
+  suffisants ; à défaut, le propriétaire (`uid`/`user`) reste identifié depuis
+  `/proc/net/tcp`, mais le processus et l'unité sont inconnus.
+- L'analyse de certificat dépend d'un certificat décodé ou de `testssl.sh`.
+- Les alertes issues des journaux sont des signaux à investiguer, pas des
+  preuves de compromission.
 - La découverte ARP n'est pas encore reliée au scan TCP.

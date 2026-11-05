@@ -1,6 +1,6 @@
 {
     "protocol": "NOUR-SENTINEL-JSON",
-    "version": "2.1",
+    "version": "3.0",
     "encoding": "UTF-8",
     "transport": "stdin-stdout",
     "sender": "rust-network-engine",
@@ -16,24 +16,121 @@
                 "80": "HTTP",
                 "443": "HTTPS"
             }
+        },
+        "inventory": {
+            "hostname": "kali",
+            "kernel": "6.8.0-kali1-amd64",
+            "distribution": "Kali GNU/Linux Rolling",
+            "interfaces": [
+                {
+                    "name": "wlp2s0",
+                    "state": "up",
+                    "mac": "00:11:22:33:44:55",
+                    "addresses": ["192.168.1.13/24"]
+                }
+            ],
+            "listeners": [
+                {
+                    "address": "0.0.0.0",
+                    "port": 22,
+                    "family": "ipv4",
+                    "state": "listen",
+                    "pid": 1234,
+                    "uid": 0,
+                    "user": "root",
+                    "process": "sshd",
+                    "exe": "/usr/sbin/sshd",
+                    "unit": "ssh.service",
+                    "container": null,
+                    "confidence": "confirmed"
+                }
+            ]
+        },
+        "authorized_targets": ["127.0.0.1"],
+        "intelligence_config": {
+            "local_inventory": true,
+            "active_probing": false,
+            "banner_timeout_ms": 800,
+            "http_probe": false,
+            "tls_probe": false,
+            "ssh_policy_audit": true,
+            "journal_audit": false,
+            "journal_lines": 200,
+            "sshd_config_path": "/etc/ssh/sshd_config"
+        },
+        "tools_config": {
+            "enabled": false,
+            "nmap": true,
+            "testssl": true,
+            "trivy": false,
+            "trivy_targets": []
         }
     },
     "response_format": {
         "engine": "NOUR SENTINEL",
-        "version": "0.4.1",
+        "version": "0.5.0",
+        "source": "rust-network-engine",
         "status": "analysis_completed",
+        "capabilities": [
+            "service_fingerprinting",
+            "vulnerability_intelligence",
+            "tls_audit",
+            "password_policy_audit",
+            "host_intrusion_detection",
+            "application_security_analysis"
+        ],
+        "network": {
+            "neighbors_discovered": 3,
+            "ports_observed": 5,
+            "open_ports": 2
+        },
         "findings": [
             {
-                "ip": "192.168.1.10",
-                "port": 3389,
-                "service": "RDP",
-                "severity": "warning",
-                "confidence": "low",
-                "evidence": "port_open",
-                "message": "Exposition observée : service présumé RDP sur 192.168.1.10:3389",
-                "recommendation": "Utiliser un VPN, activer NLA, limiter par IP.",
-                "risk_level": "warning"
+                "finding_id": "f-0123456789ab",
+                "asset_id": "kali",
+                "ip": "0.0.0.0",
+                "port": 22,
+                "service": "ssh",
+                "component": "OpenSSH",
+                "check": "exposure.wildcard.22",
+                "observation": "Écoute sur l'interface générique (port 22), potentiellement joignable depuis plusieurs réseaux",
+                "evidence": "socket:0.0.0.0:22; pid=1234; process=sshd; unit=ssh.service",
+                "confidence": "confirmed",
+                "confidence_reason": "L'exposition réelle dépend du pare-feu, du NAT, du routage et des règles IPv6.",
+                "severity": "medium",
+                "severity_capped": false,
+                "exposure": "lan",
+                "references": [],
+                "recommendation": "Restreindre l'écoute à l'interface nécessaire et vérifier les règles de filtrage IPv4 et IPv6.",
+                "status": "open",
+                "first_seen": "2026-11-05T19:30:00+00:00",
+                "last_seen": "2026-11-05T19:30:00+00:00",
+                "cve": null,
+                "kev": false,
+                "epss": null,
+                "priority_score": 4.5,
+                "priority": "P2"
             }
-        ]
+        ],
+        "risk_summary": {
+            "total": 1,
+            "by_severity": {
+                "info": 0,
+                "low": 0,
+                "medium": 1,
+                "high": 0,
+                "critical": 0
+            },
+            "by_priority": {
+                "P1": 0,
+                "P2": 1,
+                "P3": 0,
+                "P4": 0
+            },
+            "with_evidence": 1,
+            "without_evidence": 0
+        },
+        "tools_used": [],
+        "errors": []
     }
 }

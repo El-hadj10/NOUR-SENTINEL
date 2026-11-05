@@ -41,7 +41,7 @@ class TestEndToEnd(unittest.TestCase):
         return {
             "application": {
                 "name": "NOUR SENTINEL",
-                "version": "0.4.1",
+                "version": "0.5.0",
                 "environment": "integration-test"
             },
             "engines": {
@@ -151,7 +151,7 @@ class TestEndToEnd(unittest.TestCase):
 
                 # Vérification du rapport produit par Python.
                 self.assertEqual(report["engine"], "NOUR SENTINEL")
-                self.assertEqual(report["version"], "0.4.1")
+                self.assertEqual(report["version"], "0.5.0")
                 self.assertEqual(
                     report["status"],
                     "analysis_completed"
@@ -167,9 +167,15 @@ class TestEndToEnd(unittest.TestCase):
                     1
                 )
 
-                self.assertEqual(report["findings_count"], 1)
+                self.assertGreaterEqual(report["findings_count"], 1)
 
-                finding = report["findings"][0]
+                # Le constat réseau est retrouvé par son contrôle : depuis la
+                # v0.5.0, l'inventaire local peut ajouter d'autres constats.
+                finding = next(
+                    item
+                    for item in report["findings"]
+                    if item["check"] == f"exposure.port.{test_port}"
+                )
 
                 self.assertEqual(finding["ip"], "127.0.0.1")
                 self.assertEqual(finding["port"], test_port)
@@ -177,8 +183,15 @@ class TestEndToEnd(unittest.TestCase):
                 self.assertEqual(finding["severity"], "info")
                 self.assertEqual(finding["confidence"], "low")
 
+                # Inventaire local : le socket du serveur de test est attribué
+                # au processus Python (même utilisateur).
+                self.assertGreaterEqual(
+                    report["inventory"]["listeners_count"],
+                    1
+                )
+
                 self.assertIn(
-                    "[SUCCESS] NOUR SENTINEL v0.4.1 operational.",
+                    "[SUCCESS] NOUR SENTINEL v0.5.0 operational.",
                     process.stdout
                 )
 

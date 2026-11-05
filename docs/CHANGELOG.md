@@ -1,5 +1,42 @@
 # NOUR SENTINEL — Changelog
 
+## [0.5.0] — Security Intelligence
+
+### Added
+- Inventaire local Rust (`inventory.rs`) : sockets `/proc/net/tcp{,6}`, attribution PID/processus/unité systemd/conteneur, interfaces et adresses, avec racine injectable pour les tests.
+- Fingerprinting : signatures de bannières (confiance `probable`) et de processus locaux (confiance `confirmed`).
+- Corrélation CVE hors ligne (`advisories.json`) : candidats `to_verify`, note explicite sur les correctifs rétroportés ; clients NVD/OSV/KEV/EPSS optionnels jamais appelés automatiquement.
+- Audit TLS : protocoles obsolètes, suites faibles, force de chiffrement, certificats (expiration, auto-signature, clé courte, signature SHA-1/MD5).
+- Audit non destructif `sshd_config`, `login.defs` et `sudoers` (aucun secret collecté).
+- Détection par journaux journald : rafales d'échecs SSH, succès après échecs, comptes, sudo, services, pare-feu.
+- Analyse HTTP : en-têtes de sécurité, divulgation de version, CORS, cookies, méthodes.
+- Modèle de constat normalisé (`finding_id`, `evidence`, `confidence`, `confidence_reason`, `exposure`, `status`) et plafonnement des sévérités hautes sans preuve.
+- Risk engine : dédoublonnage, score gravité × confiance × exposition, bonus KEV/EPSS, priorités `P1..P4`.
+- Adaptateurs optionnels `nmap`, `testssl.sh`, `trivy` (argv en liste, sans shell, sortie parsée).
+- Nouvelle documentation `docs/SECURITY_INTELLIGENCE.md`.
+
+### Changed
+- Contrat JSON `3.0` : inventaire, `intelligence_config`, `tools_config`, `authorized_targets`, `risk_summary`, `capabilities`.
+- `analyzer.py` délègue l'analyse à `intelligence.engine` ; les constats réseau v0.4.x sont convertis au modèle v0.5.0 (`warning` → `medium`).
+- La configuration passe en 0.5.0 avec les sections `intelligence` et `tools` (désactivées par défaut).
+- Les vérifications actives et les outils restent limités aux cibles de `network.targets`.
+
+### Validated
+- 41 tests unitaires Rust réussis (7 scanner, 20 historique, 14 inventaire).
+- 82 tests unitaires Python réussis, sans réseau.
+- 8 tests d'intégration réussis, dont 2 E2E.
+- Fixtures pour `nmap`, `testssl.sh`, `trivy` et journald ; aucune dépendance externe.
+
+### Security
+- Aucune exploitation, aucun brute force, aucune collecte de secrets.
+- Une alerte haute ou critique sans preuve est plafonnée à `medium`.
+- Les outils externes et les sondes actives sont désactivés par défaut.
+
+### Limitations connues
+- Base CVE embarquée réduite : aucun constat « applicable confirmée » hors ligne.
+- Attribution du processus d'un socket d'un autre utilisateur impossible sans privilèges suffisants ; le propriétaire (`uid`/`user`) reste identifié.
+- L'analyse de certificat dépend d'un certificat décodé ou de `testssl.sh`.
+
 ## [0.4.1] — Consolidation & Reliability
 
 ### Added

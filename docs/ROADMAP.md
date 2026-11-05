@@ -64,12 +64,20 @@
 - [x] README dédoublonné et documentation des 27 tests Rust.
 - [x] Statut de l'historique exposé dans le rapport JSON.
 
-## VERSION 0.5.0 — Dashboard
+## VERSION 0.5.0 — Security Intelligence
 
-- [ ] Interface utilisateur.
-- [ ] Visualisation réseau.
-- [ ] Statistiques.
-- [ ] Rapports exportables.
+- [x] Inventaire local des sockets (PID, processus, unité systemd, conteneur).
+- [x] Fingerprinting local (confiance confirmée) et protocolaire (bannière).
+- [x] Corrélation CVE hors ligne, statut `to_verify`, note sur les correctifs rétroportés.
+- [x] Audit TLS : protocoles, suites, certificats.
+- [x] Audit non destructif SSH, `login.defs` et `sudoers`.
+- [x] Détection d'intrusion par journaux journald.
+- [x] Analyse HTTP non destructive : en-têtes, cookies, méthodes.
+- [x] Modèle de constat normalisé (`finding_id`, `evidence`, `confidence`, `exposure`, `status`).
+- [x] Déduplication et priorisation (gravité × confiance × exposition, bonus KEV/EPSS).
+- [x] Adaptateurs optionnels nmap, testssl.sh et trivy (désactivés par défaut).
+- [x] 41 tests Rust, 82 tests Python, 8 tests d'intégration.
+- [x] Documentation dédiée : `docs/SECURITY_INTELLIGENCE.md`.
 
 ## VERSION 1.0.0 — Production
 

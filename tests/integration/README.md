@@ -22,7 +22,7 @@ Le scénario d'intégration repose sur les étapes suivantes :
 
 `test_rust_python_pipeline.py`
 
-5 tests du contrat JSON entre les deux moteurs, par invocation directe de `python-brain/main.py`.
+6 tests du contrat JSON entre les deux moteurs, par invocation directe de `python-brain/main.py`, dont un scénario d'inventaire local (service confirmé et exposition générique).
 
 `test_end_to_end.py`
 
@@ -31,7 +31,7 @@ Le scénario d'intégration repose sur les étapes suivantes :
 - pipeline complet TCP local → Rust → Python → SQLite → rapport final ;
 - deux scans successifs de périmètre identique, vérifiant la persistance réelle et la détection de l'ouverture d'un port (`state_changed`, `closed` → `open`).
 
-## 4. État actuel — v0.4.1
+## 4. État actuel — v0.5.0
 
 - Chargement de la configuration : validé.
 - Validation des paramètres : validée.
@@ -40,7 +40,7 @@ Le scénario d'intégration repose sur les étapes suivantes :
 - Analyse Python : validée par tests unitaires et d'intégration.
 - Vérification de la réponse JSON : validée.
 - Enregistrement de l'historique : validé (`history.status == "recorded"`).
-- Tests automatisés d'intégration : 7 tests, 7 réussis.
+- Tests automatisés d'intégration : 8 tests, 8 réussis.
 
 ## 5. Scénarios couverts
 
@@ -51,6 +51,7 @@ Le scénario d'intégration repose sur les étapes suivantes :
 - Absence de message parasite dans `stdout` Python.
 - Pipeline complet Rust → TCP local → Python → historique SQLite → rapport de sécurité.
 - Deux scans comparés : port fermé puis ouvert, changement `state_changed` attendu, base interrogée directement.
+- Inventaire local : `OpenSSH` identifié avec confiance `confirmed`, écoute `0.0.0.0:22` signalée, `capabilities` exposées.
 
 ## 6. Isolation des tests
 

@@ -27,8 +27,10 @@ Responsabilités :
 - Classification des alertes.
 - Production des résultats JSON.
 
-Frontière : Python ne réalise aucune opération réseau et n'écrit pas
-d'historique ; il reçoit un message sur stdin et répond sur stdout.
+Frontière : Python n'écrit pas d'historique et ne modifie jamais le système.
+Il reçoit un message sur stdin et répond sur stdout. Les seules opérations
+réseau sont des sondes HTTP/TLS ou des outils externes, désactivés par
+défaut et limités au périmètre autorisé.
 
 ## 4. Communication
 
@@ -81,10 +83,47 @@ Emplacement de la base :
 - Validation des entrées (adresses IP, ports, JSON).
 - Gestion des erreurs explicite.
 
-## 8. Évolutions
+## 8. Inventaire local (v0.5.0)
 
-- Collecteur réseau étendu.
-- Analyseur de journaux.
+`rust-engine/src/inventory.rs` lit `/proc` et `/sys` sous une racine
+injectable (testable avec des fixtures).
+
+- Sockets en écoute : `/proc/net/tcp`, `/proc/net/tcp6`, décodage hexadécimal
+  IPv4/IPv6, état `listen` uniquement.
+- Attribution : inode de socket → descripteurs `/proc/<pid>/fd` → `comm`,
+  `exe`, unité systemd et conteneur (cgroup).
+- Confiance : `confirmed` (processus identifié), `probable` (socket seul),
+  `unknown` (attribution impossible).
+- Contexte hôte : hostname, noyau, distribution, interfaces (MAC, état,
+  adresses IPv6 et IPv4 via `ip -j addr` si disponible).
+
+Aucune opération réseau, aucun privilège requis au-delà de la visibilité
+`/proc`.
+
+## 9. Security Intelligence (v0.5.0)
+
+`python-brain/intelligence/` regroupe six piliers, un moteur de risque et des
+adaptateurs d'outils :
+
+- `fingerprinting/` : signatures de bannières (probable) et de processus
+  (confirmé).
+- `vulnerabilities/` : corrélation CVE hors ligne, candidats `to_verify`,
+  clients NVD/OSV/KEV/EPSS jamais appelés automatiquement.
+- `tls/` : protocoles, suites, certificats déjà décodés.
+- `passwords/` : `sshd_config`, `login.defs`, `sudoers`, sans secret.
+- `intrusion/` : journald parsé hors ligne, constats `to_verify`.
+- `applications/` : en-têtes, cookies et méthodes HTTP.
+- `risk_engine.py` : dédoublonnage, score, `P1..P4`.
+- `tools/` : `nmap`, `testssl.sh`, `trivy`, argv en liste, sans shell,
+  désactivés par défaut.
+
+Le contrat JSON `3.0` transporte l'inventaire, la configuration
+`intelligence`, `tools` et le périmètre autorisé. Détail complet :
+`docs/SECURITY_INTELLIGENCE.md`.
+
+## 10. Évolutions
+
+- Vérification des correctifs de distribution avant « applicable confirmée ».
+- Corrélation actif → version → CVE → KEV/EPSS dans l'historique.
 - Analyse comportementale multi-scans.
-- Interface graphique.
-- Moteur de détection avancé.
+- Interface graphique et rapports exportables.

@@ -1,4 +1,5 @@
 
+mod inventory;
 mod scanner;
 mod history;
 
@@ -160,6 +161,11 @@ fn run() -> Result<(), String> {
     let settings: Settings = serde_json::from_str(&config_text)
         .map_err(|error| format!("Invalid configuration: {}", error))?;
 
+    // Sections transmises telles quelles à Python : le contrat JSON reste la
+    // source de vérité, sans duplication de schéma côté Rust.
+    let raw_settings: Value = serde_json::from_str(&config_text)
+        .map_err(|error| format!("Invalid configuration: {}", error))?;
+
     validate_settings(&settings)?;
 
     // Périmètre réellement vérifié : cibles et ports dédupliqués et triés.
@@ -219,6 +225,40 @@ fn run() -> Result<(), String> {
         observations.len()
     );
 
+    // Inventaire local des services en écoute (v0.5.0).
+    // Aucune opération réseau : uniquement /proc et /sys.
+    let inventory_enabled = raw_settings["intelligence"]["local_inventory"]
+        .as_bool()
+        .unwrap_or(true);
+
+    let inventory = if inventory_enabled {
+        println!("[RUST] Local service inventory...");
+        inventory::read_inventory(Path::new("/"))
+    } else {
+        inventory::HostContext::empty()
+    };
+
+    for listener in &inventory.listeners {
+        println!(
+            "[INVENTORY] {}:{} {} pid={} process={} confidence={}",
+            listener.address,
+            listener.port,
+            listener.family,
+            listener
+                .pid
+                .map(|pid| pid.to_string())
+                .unwrap_or_else(|| "-".to_string()),
+            listener.process.as_deref().unwrap_or("-"),
+            listener.confidence
+        );
+    }
+
+    println!(
+        "[RUST] {} listening socket(s) inventoried, {} interface(s).",
+        inventory.listeners.len(),
+        inventory.interfaces.len()
+    );
+
     // Conversion des observations en événements JSON.
     let events: Vec<Value> = observations
         .iter()
@@ -237,7 +277,17 @@ fn run() -> Result<(), String> {
         "source": "rust-network-engine",
         "devices": devices,
         "events": events,
-        "analysis_config": &settings.analysis
+        "analysis_config": &settings.analysis,
+        "inventory": inventory,
+        "authorized_targets": scope.targets(),
+        "intelligence_config": raw_settings
+            .get("intelligence")
+            .cloned()
+            .unwrap_or_else(|| json!({})),
+        "tools_config": raw_settings
+            .get("tools")
+            .cloned()
+            .unwrap_or_else(|| json!({}))
     });
 
     // Localisation du moteur Python.

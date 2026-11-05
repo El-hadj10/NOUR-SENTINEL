@@ -1,8 +1,7 @@
-
 {
     "application": {
         "name": "NOUR SENTINEL",
-        "version": "0.4.1",
+        "version": "0.5.0",
         "environment": "development"
     },
     "engines": {
@@ -43,8 +42,28 @@
             "443": "HTTPS",
             "3306": "MySQL",
             "5432": "PostgreSQL",
-            "8080": "HTTP Alternative"
+            "8080": "HTTP Alternative",
+            "8443": "HTTPS Alternative"
         }
+    },
+    "intelligence": {
+        "local_inventory": true,
+        "active_probing": false,
+        "banner_timeout_ms": 800,
+        "http_probe": false,
+        "tls_probe": false,
+        "ssh_policy_audit": true,
+        "journal_audit": false,
+        "journal_lines": 200,
+        "sshd_config_path": "/etc/ssh/sshd_config",
+        "login_defs_path": "/etc/login.defs"
+    },
+    "tools": {
+        "enabled": false,
+        "nmap": true,
+        "testssl": true,
+        "trivy": false,
+        "trivy_targets": []
     },
     "security": {
         "authorized_scanning_only": true,

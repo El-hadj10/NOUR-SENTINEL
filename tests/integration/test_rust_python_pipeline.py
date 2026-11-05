@@ -72,7 +72,7 @@ class TestRustPythonPipeline(unittest.TestCase):
         report = json.loads(process.stdout)
 
         self.assertEqual(report["engine"], "NOUR SENTINEL")
-        self.assertEqual(report["version"], "0.4.1")
+        self.assertEqual(report["version"], "0.5.0")
         self.assertEqual(report["source"], "rust-network-engine")
         self.assertEqual(report["status"], "analysis_completed")
 
@@ -81,8 +81,16 @@ class TestRustPythonPipeline(unittest.TestCase):
         self.assertEqual(report["network"]["open_ports"], 1)
 
         self.assertEqual(report["findings_count"], 1)
-        self.assertEqual(report["findings"][0]["port"], 22)
-        self.assertEqual(report["findings"][0]["service"], "SSH")
+
+        finding = report["findings"][0]
+
+        self.assertEqual(finding["port"], 22)
+        self.assertEqual(finding["service"], "SSH")
+        self.assertEqual(finding["check"], "exposure.port.22")
+        self.assertTrue(finding["finding_id"].startswith("f-"))
+        self.assertEqual(finding["exposure"], "local")
+
+        self.assertEqual(report["risk_summary"]["total"], 1)
 
     def test_sensitive_port_detection(self):
         """Vérifie qu'un port sensible ouvert génère une alerte."""
@@ -113,7 +121,7 @@ class TestRustPythonPipeline(unittest.TestCase):
         report = json.loads(process.stdout)
 
         self.assertEqual(report["findings_count"], 1)
-        self.assertEqual(report["findings"][0]["severity"], "warning")
+        self.assertEqual(report["findings"][0]["severity"], "medium")
         self.assertEqual(report["findings"][0]["service"], "RDP")
 
     def test_closed_ports_generate_no_findings(self):
@@ -147,6 +155,78 @@ class TestRustPythonPipeline(unittest.TestCase):
         self.assertEqual(report["network"]["open_ports"], 0)
         self.assertEqual(report["findings_count"], 0)
         self.assertEqual(report["findings"], [])
+
+    def test_inventory_is_identified_and_exposed(self):
+        """Vérifie l'inventaire local : service confirmé et écoute générique."""
+
+        payload = {
+            "source": "rust-network-engine",
+            "devices": [],
+            "events": [
+                {
+                    "type": "port_observed",
+                    "ip": "127.0.0.1",
+                    "port": 22,
+                    "state": "open"
+                }
+            ],
+            "analysis_config": {
+                "sensitive_ports": [],
+                "known_services": {"22": "SSH"}
+            },
+            "inventory": {
+                "hostname": "kali",
+                "kernel": "6.8.0-kali1-amd64",
+                "distribution": "Kali GNU/Linux Rolling",
+                "interfaces": [],
+                "listeners": [
+                    {
+                        "address": "0.0.0.0",
+                        "port": 22,
+                        "family": "ipv4",
+                        "state": "listen",
+                        "pid": 4242,
+                        "process": "sshd",
+                        "exe": "/usr/sbin/sshd",
+                        "unit": "ssh.service",
+                        "container": None,
+                        "confidence": "confirmed"
+                    }
+                ]
+            },
+            "authorized_targets": ["127.0.0.1"],
+            "intelligence_config": {},
+            "tools_config": {}
+        }
+
+        report = json.loads(self.run_python_engine(json.dumps(payload)).stdout)
+
+        self.assertEqual(report["inventory"]["hostname"], "kali")
+        self.assertEqual(report["inventory"]["listeners_count"], 1)
+
+        services = report["services"]
+
+        self.assertEqual(len(services), 1)
+        self.assertEqual(services[0]["product"], "OpenSSH")
+        self.assertEqual(services[0]["confidence"], "confirmed")
+
+        identified = [
+            finding
+            for finding in report["findings"]
+            if finding["check"] == "service.identified"
+        ]
+        wildcard = [
+            finding
+            for finding in report["findings"]
+            if finding["check"] == "exposure.wildcard.22"
+        ]
+
+        self.assertEqual(len(identified), 1)
+        self.assertEqual(identified[0]["severity"], "info")
+        self.assertEqual(len(wildcard), 1)
+        self.assertEqual(wildcard[0]["severity"], "medium")
+
+        self.assertIn("host_intrusion_detection", report["capabilities"])
 
     def test_invalid_json_is_rejected(self):
         """Vérifie que le moteur rejette une entrée JSON invalide."""
