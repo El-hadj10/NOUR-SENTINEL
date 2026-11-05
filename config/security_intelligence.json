@@ -1,7 +1,7 @@
 {
     "application": {
         "name": "NOUR SENTINEL LAB",
-        "version": "0.6.0-beta.1",
+        "version": "0.6.0-beta.2",
         "environment": "lab"
     },
     "authorized_targets": [
@@ -10,11 +10,6 @@
     ],
     "timeout": 2.0,
     "max_response_bytes": 65536,
-    "auth": {
-        "min_secret_length": 16,
-        "max_attempts": 3,
-        "session_ttl_seconds": 300
-    },
     "inventory": {
         "packages": true,
         "services": true,

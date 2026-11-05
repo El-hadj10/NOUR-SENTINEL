@@ -1,8 +1,8 @@
 """CLI du laboratoire Security Intelligence.
 
-L'authentification est vérifiée avant toute commande opérationnelle. La
-sortie standard ne contient que le rapport JSON ; les messages humains vont
-sur la sortie d'erreur.
+L'authentification Argon2id est vérifiée avant chaque commande
+opérationnelle, sans session réutilisable. La sortie standard ne contient que
+le rapport JSON ; les messages humains vont sur la sortie d'erreur.
 """
 
 import argparse
@@ -100,8 +100,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     try:
-        # Auth avant toute commande opérationnelle et avant la configuration.
-        auth_gate.ensure_authenticated()
+        # Auth directe avant toute commande et avant la configuration.
+        auth_gate.authenticate()
         config = config_module.load_config()
         report = run(args, config)
     except auth_gate.AuthError as error:

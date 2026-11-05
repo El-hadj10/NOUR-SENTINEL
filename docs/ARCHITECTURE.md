@@ -121,21 +121,28 @@ Le contrat JSON `3.0` transporte l'inventaire, la configuration
 `intelligence`, `tools` et le périmètre autorisé. Détail complet :
 `docs/SECURITY_INTELLIGENCE.md`.
 
-## 10. Laboratoire 0.6.0-beta.1
+## 10. Laboratoire 0.6.0-beta.2
 
 Couche additive, séparée de la ligne stable v0.5.0. Les moteurs v0.5.0
 restent la référence ; le laboratoire ajoute l'accès, le CLI et la
 persistance privée.
 
-- **Auth Gate** (`security_intelligence/auth_gate.py`) : Argon2id, hash PHC,
-fichier `~/.config/nour-sentinel/auth.phc` en 0600, dossier 0700, trois
-tentatives avec temporisation. Aucun secret en clair.
-- **Session courte** : fichier 0600, expiration 300 s, plafond 1 h,
-symlinks et permissions larges refusés.
-- **Rust** (`auth.rs`) : `enforce()` s'exécute avant la configuration, l'ARP
-et toute tentative TCP ; sans terminal ni session, le moteur refuse.
-- **CLI** (`security_intelligence/cli.py`) : authentification avant toute
+- **Auth Gate** (`security_intelligence/auth_gate.py`) : Argon2id direct,
+hash PHC, dossier 0700, fichiers 0600. Aucune session locale n'est créée,
+acceptée ou nettoyée.
+- **Stockage d'authentification** : `auth.phc`, `auth.attempts.json` et
+`auth.lock` sous `~/.config/nour-sentinel/`. Le compteur persistant verrouille
+après trois échecs (30 s, puis doublement jusqu'à 15 min).
+- **Verrou** : `auth.lock` ouvert avec `O_NOFOLLOW`, validé par `fstat` et
+protégé par `flock(LOCK_EX)` ; les fichiers sensibles sont lus de la même
+manière.
+- **Rust** (`auth.rs`) : terminal interactif obligatoire, interpréteur fixe
+`.venv/bin/python`, `authenticate` exécuté avant la configuration, l'ARP et
+le TCP. Aucune variable ne peut rediriger le hash ou l'interpréteur.
+- **CLI** (`security_intelligence/cli.py`) : Argon2id vérifié avant chaque
 commande ; stdout réservé au JSON, diagnostics sur stderr.
+- **Lanceur** : plus de session temporaire ni de variable de session ;
+`--setup-auth` et `--change-auth` restent interactifs.
 - **Liste blanche** : `config/security_intelligence.json` (127.0.0.1 et
 localhost par défaut) ; refus avant la sonde.
 - **Collecteurs** : dpkg/rpm, systemd, `ss`, `sshd -T`, PAM, journald agrégé

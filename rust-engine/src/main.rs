@@ -151,7 +151,7 @@ fn run() -> Result<(), String> {
         .to_path_buf();
 
     // Contrôle d'accès propriétaire AVANT toute configuration, lecture ARP
-    // ou tentative TCP (0.6.0-beta.1).
+    // ou tentative TCP (0.6.0-beta.2) : Argon2id direct, sans session.
     auth::enforce(&root)?;
 
     // Chargement de la configuration.

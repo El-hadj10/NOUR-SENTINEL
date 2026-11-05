@@ -1,101 +1,85 @@
 //! Contrôle d'accès propriétaire, exécuté avant configuration et réseau.
 //!
-//! Le secret est vérifié par l'Auth Gate Python (Argon2id). Le moteur Rust
-//! consomme ensuite une session locale courte, fichier 0600, pour éviter une
-//! double saisie. Un lancement direct sans session valide demande la phrase
-//! secrète sur un terminal interactif ; sans terminal, il est refusé.
+//! Aucune session locale n'est acceptée. Le moteur exige un terminal
+//! interactif puis délègue la vérification Argon2id à l'Auth Gate Python.
+//! L'interpréteur et le script sont determinés depuis la racine du projet :
+//! aucune variable d'environnement ne peut les substituer.
 
-use serde::Deserialize;
 use std::fs;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Une session ne peut jamais dépasser une heure, même si le fichier ment.
-const MAX_SESSION_SECONDS: i64 = 3600;
-
-#[derive(Deserialize)]
-struct SessionFile {
-    expires_at: i64,
+/// Interpréteur Python privé du laboratoire, créé par ``--setup-deps``.
+pub fn python_interpreter(root: &Path) -> PathBuf {
+    root.join(".venv/bin/python")
 }
 
-pub fn session_path() -> PathBuf {
-    if let Ok(path) = std::env::var("NOUR_SENTINEL_SESSION") {
-        if !path.trim().is_empty() {
-            return PathBuf::from(path);
-        }
+/// Script d'authentification livré avec le laboratoire.
+pub fn auth_script(root: &Path) -> PathBuf {
+    root.join("python-brain/security_intelligence/auth_gate.py")
+}
+
+/// Refuse un lancement non interactif avant toute collecte.
+pub fn require_terminal(is_terminal: bool) -> Result<(), String> {
+    if !is_terminal {
+        return Err(
+            "terminal interactif requis : authentifiez-vous avec ./lancer-nour-sentinel.sh"
+                .to_string(),
+        );
     }
 
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-
-    PathBuf::from(home).join(".config/nour-sentinel/session.json")
+    Ok(())
 }
 
-fn now() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs() as i64)
-        .unwrap_or(0)
-}
+/// Construit la commande d'authentification, sans secret ni session.
+pub fn auth_command(root: &Path) -> Result<Command, String> {
+    let python = python_interpreter(root);
+    let script = auth_script(root);
 
-/// Vérifie forme, permissions et expiration de la session.
-pub fn validate_session(path: &Path, current: i64) -> Result<(), String> {
-    let metadata = fs::symlink_metadata(path)
-        .map_err(|_| "session absente : authentification requise".to_string())?;
+    if !python.is_file() {
+        return Err(format!(
+            "environnement Python du laboratoire absent ({}); exécutez --setup-deps",
+            python.display()
+        ));
+    }
 
-    if !metadata.file_type().is_file() {
-        return Err("session refusée : fichier ordinaire requis".to_string());
+    if !script.is_file() {
+        return Err(format!(
+            "Auth Gate introuvable: {}",
+            script.display()
+        ));
     }
 
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
 
-        if metadata.permissions().mode() & 0o077 != 0 {
-            return Err("session refusée : permissions trop larges (0600 requis)".to_string());
+        let mode = fs::metadata(&python)
+            .map_err(|error| format!("interpréteur Python illisible: {}", error))?
+            .permissions()
+            .mode();
+
+        if mode & 0o111 == 0 {
+            return Err(format!(
+                "interpréteur Python non exécutable: {}",
+                python.display()
+            ));
         }
     }
 
-    let text = fs::read_to_string(path)
-        .map_err(|error| format!("session illisible: {}", error))?;
-    let session: SessionFile = serde_json::from_str(&text)
-        .map_err(|_| "session invalide : JSON attendu".to_string())?;
+    let mut command = Command::new(&python);
+    command.arg(&script).arg("authenticate");
 
-    if session.expires_at <= current {
-        return Err("session expirée : authentifiez-vous à nouveau".to_string());
-    }
-
-    if session.expires_at > current + MAX_SESSION_SECONDS {
-        return Err("session refusée : durée anormale".to_string());
-    }
-
-    Ok(())
+    Ok(command)
 }
 
 /// Authentifie avant toute lecture de configuration.
 pub fn enforce(root: &Path) -> Result<(), String> {
-    let path = session_path();
+    require_terminal(std::io::stdin().is_terminal())?;
 
-    if validate_session(&path, now()).is_ok() {
-        return Ok(());
-    }
-
-    if !std::io::stdin().is_terminal() {
-        return Err(format!(
-            "Accès refusé : authentifiez-vous avec ./lancer-nour-sentinel.sh (session attendue: {})",
-            path.display()
-        ));
-    }
-
-    let python = std::env::var("NOUR_SENTINEL_PYTHON").unwrap_or_else(|_| "python3".to_string());
-    let script = root.join("python-brain/security_intelligence/auth_gate.py");
-
-    let status = Command::new(python)
-        .arg(script)
-        .arg("login")
-        .arg("--session-file")
-        .arg(&path)
+    let mut command = auth_command(root)?;
+    let status = command
         .status()
         .map_err(|error| format!("Auth Gate indisponible: {}", error))?;
 
@@ -103,91 +87,88 @@ pub fn enforce(root: &Path) -> Result<(), String> {
         return Err("authentification refusée".to_string());
     }
 
-    validate_session(&path, now())
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::symlink;
+    use std::os::unix::fs::PermissionsExt;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static COUNTER: AtomicU64 = AtomicU64::new(0);
 
-    fn fixture(contents: &str, mode: u32) -> (PathBuf, PathBuf) {
-        use std::os::unix::fs::PermissionsExt;
-
+    fn fixture(with_files: bool) -> PathBuf {
         let identifier = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let directory = std::env::temp_dir().join(format!(
+        let root = std::env::temp_dir().join(format!(
             "nour-auth-{}-{}",
             std::process::id(),
             identifier
         ));
-        let _ = fs::remove_dir_all(&directory);
-        fs::create_dir_all(&directory).unwrap();
-        fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
 
-        let path = directory.join("session.json");
-        fs::write(&path, contents).unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
+        if with_files {
+            let python = python_interpreter(&root);
+            let script = auth_script(&root);
 
-        (directory, path)
+            fs::create_dir_all(python.parent().unwrap()).unwrap();
+            fs::create_dir_all(script.parent().unwrap()).unwrap();
+            fs::write(&python, b"#!/bin/sh\nexit 0\n").unwrap();
+            fs::set_permissions(&python, fs::Permissions::from_mode(0o700)).unwrap();
+            fs::write(&script, b"# fixture\n").unwrap();
+        }
+
+        root
     }
 
     #[test]
-    fn accepts_valid_session() {
-        let (directory, path) = fixture(r#"{"expires_at": 2000}"#, 0o600);
+    fn uses_deterministic_project_interpreter() {
+        let root = Path::new("/opt/nour-sentinel");
 
-        assert!(validate_session(&path, 1000).is_ok());
-
-        let _ = fs::remove_dir_all(directory);
+        assert_eq!(
+            python_interpreter(root),
+            PathBuf::from("/opt/nour-sentinel/.venv/bin/python")
+        );
+        assert_eq!(
+            auth_script(root),
+            PathBuf::from("/opt/nour-sentinel/python-brain/security_intelligence/auth_gate.py")
+        );
     }
 
     #[test]
-    fn rejects_expired_session() {
-        let (directory, path) = fixture(r#"{"expires_at": 900}"#, 0o600);
+    fn builds_authenticate_command_without_secret_or_session() {
+        let root = fixture(true);
+        let command = auth_command(&root).unwrap();
+        let arguments: Vec<String> = command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().to_string())
+            .collect();
 
-        assert!(validate_session(&path, 1000).is_err());
+        assert_eq!(command.get_program(), python_interpreter(&root));
+        assert_eq!(arguments, vec![
+            auth_script(&root).to_string_lossy().to_string(),
+            "authenticate".to_string()
+        ]);
+        assert!(!arguments.iter().any(|argument| argument.contains("session")));
 
-        let _ = fs::remove_dir_all(directory);
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
-    fn rejects_overlong_session() {
-        let (directory, path) = fixture(r#"{"expires_at": 9000}"#, 0o600);
+    fn refuses_missing_interpreter_or_gate() {
+        let root = fixture(false);
 
-        assert!(validate_session(&path, 1000).is_err());
+        let error = auth_command(&root).unwrap_err();
 
-        let _ = fs::remove_dir_all(directory);
+        assert!(error.contains("Python du laboratoire absent"));
+
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
-    fn rejects_loose_permissions() {
-        let (directory, path) = fixture(r#"{"expires_at": 2000}"#, 0o644);
-
-        assert!(validate_session(&path, 1000).is_err());
-
-        let _ = fs::remove_dir_all(directory);
-    }
-
-    #[test]
-    fn rejects_malformed_session() {
-        let (directory, path) = fixture("not-json", 0o600);
-
-        assert!(validate_session(&path, 1000).is_err());
-
-        let _ = fs::remove_dir_all(directory);
-    }
-
-    #[test]
-    fn rejects_symlinked_session() {
-        let (directory, path) = fixture(r#"{"expires_at": 2000}"#, 0o600);
-        let link = directory.join("session-link.json");
-
-        symlink(&path, &link).unwrap();
-
-        assert!(validate_session(&link, 1000).is_err());
-
-        let _ = fs::remove_dir_all(directory);
+    fn refuses_non_interactive_terminal() {
+        assert!(require_terminal(false).is_err());
+        assert!(require_terminal(true).is_ok());
     }
 }

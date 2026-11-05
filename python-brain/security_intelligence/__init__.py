@@ -1,4 +1,4 @@
-"""NOUR SENTINEL — Laboratoire Security Intelligence (0.6.0-beta.1).
+"""NOUR SENTINEL — Laboratoire Security Intelligence (0.6.0-beta.2).
 
 Le laboratoire est une couche additive au-dessus de la ligne stable v0.5.0.
 Il ajoute l'authentification propriétaire, la liste blanche réseau, les
@@ -8,7 +8,7 @@ Rien ici ne remplace les moteurs v0.5.0 : les modules de détection éprouvés
 sont réutilisés, et chaque nouvelle capacité reste explicable.
 """
 
-VERSION = "0.6.0-beta.1"
+VERSION = "0.6.0-beta.2"
 BASE_VERSION = "0.5.0"
 LAB_NAME = "NOUR SENTINEL LAB"
 

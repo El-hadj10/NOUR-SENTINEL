@@ -1,5 +1,44 @@
 # NOUR SENTINEL — Changelog
 
+## [0.6.0-beta.2] — Auth Gate Hardening
+
+### Fixed
+- Suppression de la session locale forgeable : un `session.json` avec une date future ne peut plus ouvrir l'accès sans la phrase secrète.
+- Suppression des fonctions de création, validation et nettoyage de session.
+- Un lancement non interactif est refusé avant toute configuration ou collecte réseau.
+
+### Added
+- Vérification Argon2id directe à chaque lancement Rust et à chaque commande du CLI.
+- Verrou inter-processus `auth.lock` (`flock(LOCK_EX)`) et compteur persistant `auth.attempts.json`.
+- Verrouillage après trois échecs : 30 s, puis doublement progressif jusqu'à 15 min ; remise à zéro après succès.
+- Lecture des fichiers sensibles avec `O_NOFOLLOW` et validation des métadonnées du descripteur (`fstat`).
+- Tests de permissions, liens symboliques, verrou exclusif et progression du verrouillage.
+- E2E PTY avec hash Argon2id réel et ancien `session.json` forgé.
+
+### Changed
+- Rust utilise un interpréteur déterministe `.venv/bin/python` et transmet uniquement `authenticate` à l'Auth Gate.
+- Le CLI vérifie la phrase secrète avant chaque commande opérationnelle.
+- Le lanceur ne crée plus de session ni de variable de session ; `--setup-auth`, `--change-auth` et l'exécution restent inchangés pour l'utilisateur.
+- Les variables `NOUR_SENTINEL_AUTH_FILE`, `NOUR_SENTINEL_SESSION`, `NOUR_SENTINEL_PYTHON` et `NOUR_SENTINEL_VENV` ne sont plus acceptées.
+
+### Security
+- Aucune session réutilisable ; le secret est vérifié à chaque lancement.
+- Aucun secret dans les fichiers, arguments, journaux ou variables d'environnement.
+- Dossier 0700, fichiers d'authentification 0600, propriétaire courant.
+- Aucune exploitation, aucun brute force, aucune remédiation automatique.
+
+### Validated
+- 45 tests Rust (7 scanner, 20 historique, 14 inventaire, 4 auth).
+- 150 tests Python dans le venv complet.
+- 9 tests d'intégration : 6 pipeline + 3 E2E PTY (dont session forgée et mauvais secret verrouillé).
+- `bash -n` réussi, JSON valides, `--help`/`--version` exécutés.
+
+### Limitations connues
+- La barrière ne résiste pas à root ni à un compte Linux déjà compromis.
+- `sshd -T` complet et le processus d'un socket d'un autre utilisateur exigent des privilèges.
+- TLS 1.0/1.1 et STARTTLS ne sont pas testés ; un échec de négociation ne prouve pas l'absence de TLS.
+- Les résultats OSV/NVD restent `to_verify` tant que le correctif de distribution n'est pas vérifié.
+
 ## [0.6.0-beta.1] — Security Intelligence Lab
 
 ### Added

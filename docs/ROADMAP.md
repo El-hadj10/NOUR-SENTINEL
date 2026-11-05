@@ -92,15 +92,23 @@
 - [x] Rapports 0600 et base SQLite dédiée.
 - [x] 47 tests Rust, 145 tests Python, 8 tests d'intégration.
 
-## VERSION 0.6.0-beta.2 — Durcissement
+## VERSION 0.6.0-beta.2 — Auth Gate Hardening
+
+- [x] Suppression des sessions locales et du `session.json` forgeable.
+- [x] Vérification Argon2id directe avant chaque lancement Rust et commande CLI.
+- [x] Verrou `flock`, compteur persistant et verrouillage progressif jusqu'à 15 min.
+- [x] Lecture des fichiers sensibles avec `O_NOFOLLOW` et validation `fstat`.
+- [x] Interpréteur déterministe `.venv/bin/python`, sans variable de substitution.
+- [x] Tests de permissions, liens symboliques, verrou et progression.
+- [x] 3 E2E PTY avec hash réel, session forgée ignorée et mauvais secret verrouillé.
+- [x] 45 tests Rust, 150 tests Python, 9 tests d'intégration.
+
+## VERSION 0.6.0-beta.3 — Durcissement & corrélation
 
 - [ ] Vérification des correctifs de distribution avant « applicable confirmée ».
 - [ ] Preuves et faux positifs documentés sur un panel de distributions.
 - [ ] Schéma de rapport stable et migrations SQLite testées.
 - [ ] Exécution contrôlée de testssl.sh et nmap avec artefacts horodatés.
-
-## VERSION 0.6.0-beta.3 — Corrélation multi-source
-
 - [ ] Actif → version → CVE → KEV/EPSS reliés dans l'historique.
 - [ ] Rapports enrichis et exportables.
 
@@ -109,8 +117,6 @@
 - [ ] Rebaser le laboratoire sur v0.5.0 et intégrer par lots.
 - [ ] Audit complet, tests Rust/Python/E2E et revue de sécurité.
 - [ ] Aucun déplacement de tag existant.
-
-## VERSION 1.0.0 — Production
 
 ## VERSION 1.0.0 — Production
 

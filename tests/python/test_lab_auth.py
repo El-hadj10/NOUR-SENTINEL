@@ -1,10 +1,11 @@
+import fcntl
 import importlib.util
+import io
 import json
 import os
 import stat
 import sys
 import tempfile
-import time
 import unittest
 from pathlib import Path
 
@@ -26,10 +27,24 @@ class TestAuthGate(unittest.TestCase):
         self.directory = tempfile.TemporaryDirectory()
         self.root = Path(self.directory.name)
         self.auth = self.root / "nour-sentinel" / "auth.phc"
-        self.session = self.root / "nour-sentinel" / "session.json"
+        self.attempts = self.auth.parent / "auth.attempts.json"
+        self.lock = self.auth.parent / "auth.lock"
+        self.clock = 1_000_000
 
     def tearDown(self):
         self.directory.cleanup()
+
+    def authenticate(self, secret, **kwargs):
+        return auth_gate.authenticate(
+            secret=secret,
+            path=self.auth,
+            require_tty=False,
+            now_fn=lambda: self.clock,
+            **kwargs,
+        )
+
+    def state(self):
+        return json.loads(self.attempts.read_text(encoding="utf-8"))
 
     def test_setup_creates_argon2id_phc_in_private_file(self):
         path = auth_gate.setup(self.SECRET, path=self.auth)
@@ -77,47 +92,132 @@ class TestAuthGate(unittest.TestCase):
         with self.assertRaises(auth_gate.AuthError):
             auth_gate.verify(self.SECRET, path=self.auth)
 
-    def test_login_non_interactive_with_three_attempts(self):
+    def test_hash_symlink_is_refused(self):
         auth_gate.setup(self.SECRET, path=self.auth)
-
-        self.assertTrue(
-            auth_gate.login(
-                path=self.auth,
-                require_tty=False,
-                getpass_fn=lambda _: self.SECRET,
-            )
-        )
+        target = self.auth.parent / "hash-target"
+        os.replace(self.auth, target)
+        self.auth.symlink_to(target)
 
         with self.assertRaises(auth_gate.AuthError):
-            auth_gate.login(
+            auth_gate.verify(self.SECRET, path=self.auth)
+
+    def test_non_interactive_authentication_is_refused(self):
+        auth_gate.setup(self.SECRET, path=self.auth)
+
+        with self.assertRaisesRegex(auth_gate.AuthError, "terminal interactif"):
+            auth_gate.authenticate(
+                self.SECRET,
                 path=self.auth,
-                require_tty=False,
-                getpass_fn=lambda _: "incorrect",
-                sleep_fn=lambda _: None,
+                require_tty=True,
+                input_stream=io.StringIO(),
             )
 
-    def test_session_expires_and_is_private(self):
-        path = auth_gate.create_session(self.session, ttl=60)
+    def test_successful_authentication_resets_failure_counter(self):
+        auth_gate.setup(self.SECRET, path=self.auth)
+        auth_gate._write_attempts(
+            self.auth,
+            {"version": 1, "failures": 2, "locked_until": 0},
+        )
 
-        self.assertTrue(auth_gate.session_valid(path))
-        self.assertEqual(stat.S_IMODE(os.stat(path).st_mode), 0o600)
-        self.assertFalse(auth_gate.session_valid(path, now=int(time.time()) + 61))
+        self.assertTrue(self.authenticate(self.SECRET))
 
-        payload = json.loads(Path(path).read_text(encoding="utf-8"))
-        self.assertGreater(payload["expires_at"], payload["created_at"])
+        self.assertEqual(self.state()["failures"], 0)
+        self.assertEqual(self.state()["locked_until"], 0)
 
-    def test_session_symlink_is_refused(self):
-        path = auth_gate.create_session(self.session, ttl=60)
-        link = self.root / "nour-sentinel" / "link.json"
-        link.symlink_to(path)
+    def test_three_failures_lock_for_thirty_seconds(self):
+        auth_gate.setup(self.SECRET, path=self.auth)
 
-        self.assertFalse(auth_gate.session_valid(link))
+        with self.assertRaisesRegex(auth_gate.AuthError, "verrouillé pendant 30"):
+            self.authenticate("mauvais secret", max_attempts=3)
 
-    def test_session_permissions_are_refused(self):
-        path = auth_gate.create_session(self.session, ttl=60)
-        os.chmod(path, 0o644)
+        state = self.state()
 
-        self.assertFalse(auth_gate.session_valid(path))
+        self.assertEqual(state["failures"], 3)
+        self.assertEqual(state["locked_until"], self.clock + 30)
+
+        with self.assertRaisesRegex(auth_gate.AuthError, "verrouillée"):
+            auth_gate.authenticate(
+                path=self.auth,
+                require_tty=False,
+                getpass_fn=lambda _: self.fail("la saisie ne doit pas être demandée"),
+                now_fn=lambda: self.clock,
+            )
+
+    def test_lockout_expires_then_progresses(self):
+        auth_gate.setup(self.SECRET, path=self.auth)
+
+        with self.assertRaisesRegex(auth_gate.AuthError, "verrouillé pendant 30"):
+            self.authenticate("mauvais secret", max_attempts=3)
+
+        self.clock += 30
+
+        with self.assertRaisesRegex(auth_gate.AuthError, "verrouillé pendant 60"):
+            self.authenticate("mauvais secret", max_attempts=1)
+
+        state = self.state()
+
+        self.assertEqual(state["failures"], 4)
+        self.assertEqual(state["locked_until"], self.clock + 60)
+
+    def test_lockout_is_capped_at_fifteen_minutes(self):
+        auth_gate.setup(self.SECRET, path=self.auth)
+        auth_gate._write_attempts(
+            self.auth,
+            {
+                "version": 1,
+                "failures": 10,
+                "locked_until": self.clock - 1,
+            },
+        )
+
+        with self.assertRaisesRegex(auth_gate.AuthError, "verrouillé pendant 900"):
+            self.authenticate("mauvais secret", max_attempts=1)
+
+        state = self.state()
+
+        self.assertEqual(state["failures"], 11)
+        self.assertEqual(state["locked_until"], self.clock + 900)
+
+    def test_attempts_file_is_private_and_persistent(self):
+        auth_gate.setup(self.SECRET, path=self.auth)
+
+        with self.assertRaises(auth_gate.AuthError):
+            self.authenticate("mauvais secret", max_attempts=1)
+
+        info = os.stat(self.attempts)
+
+        self.assertEqual(stat.S_IMODE(info.st_mode), 0o600)
+        self.assertEqual(info.st_uid, os.getuid())
+        self.assertEqual(self.state()["failures"], 1)
+
+    def test_attempts_symlink_is_refused(self):
+        auth_gate.setup(self.SECRET, path=self.auth)
+        self.attempts.unlink()
+
+        target = self.auth.parent / "attempts-target.json"
+        target.write_text(
+            json.dumps({"version": 1, "failures": 0, "locked_until": 0}),
+            encoding="utf-8",
+        )
+        os.chmod(target, 0o600)
+        self.attempts.symlink_to(target)
+
+        with self.assertRaises(auth_gate.AuthError):
+            self.authenticate(self.SECRET, max_attempts=1)
+
+    def test_lock_file_is_private_and_exclusive(self):
+        auth_gate.setup(self.SECRET, path=self.auth)
+
+        with auth_gate._auth_lock(self.auth):
+            self.assertEqual(stat.S_IMODE(os.stat(self.lock).st_mode), 0o600)
+
+            descriptor = os.open(self.lock, os.O_RDWR)
+
+            try:
+                with self.assertRaises(BlockingIOError):
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            finally:
+                os.close(descriptor)
 
 
 if __name__ == "__main__":

@@ -19,12 +19,12 @@ combinant Rust, Python et SQLite.
 Statut : les six capacités sont implémentées, testées hors ligne et
 documentées dans [`docs/SECURITY_INTELLIGENCE.md`](docs/SECURITY_INTELLIGENCE.md).
 
-**Laboratoire : 0.6.0-beta.1 — Security Intelligence Lab**
+**Laboratoire : 0.6.0-beta.2 — Security Intelligence Lab**
 
-Couche additive au-dessus de la v0.5.0 : authentification propriétaire,
-CLI `--intel`, liste blanche locale, connecteurs OSV/NVD/KEV/EPSS, rapports
-privés et base SQLite dédiée. Dossier complet :
-[`docs/SECURITY_INTELLIGENCE_LAB.md`](docs/SECURITY_INTELLIGENCE_LAB.md).
+Couche additive au-dessus de la v0.5.0 : authentification propriétaire
+Argon2id directe (sans session), CLI `--intel`, liste blanche locale,
+connecteurs OSV/NVD/KEV/EPSS, rapports privés et base SQLite dédiée. Dossier
+complet : [`docs/SECURITY_INTELLIGENCE_LAB.md`](docs/SECURITY_INTELLIGENCE_LAB.md).
 
 Le laboratoire est volontairement séparé de la ligne stable ; aucun tag n'est
 déplacé et la fusion exige un rebasage puis un audit complet.
@@ -38,6 +38,8 @@ Provenance :
   optionnels.
 - 0.6.0-beta.1 : Auth Gate Argon2id, lanceur, CLI authentifié, liste blanche,
   collecteurs locaux et connecteurs externes explicites.
+- 0.6.0-beta.2 : suppression de la session forgeable, Argon2id direct à
+  chaque lancement, verrou `flock`, compteur persistant et E2E PTY.
 
 ## Les six capacités
 
@@ -55,7 +57,7 @@ Chaque constat porte `finding_id`, `evidence`, `confidence`,
 `recommendation`. Une sévérité haute ou critique sans preuve est plafonnée à
 `medium` et signalée (`severity_capped`).
 
-## Laboratoire 0.6.0-beta.1
+## Laboratoire 0.6.0-beta.2
 
 ```bash
 ./lancer-nour-sentinel.sh --setup-deps   # venv + argon2-cffi
@@ -68,8 +70,9 @@ Chaque constat porte `finding_id`, `evidence`, `confidence`,
 ./lancer-nour-sentinel.sh --intel cve --online
 ```
 
-- Le contrôle d'accès Rust s'exécute **avant** la configuration, l'ARP et le
-  TCP ; le CLI s'authentifie avant toute commande opérationnelle.
+- Le contrôle d'accès Rust exige un terminal et s'exécute **avant** la
+  configuration, l'ARP et le TCP ; le CLI vérifie Argon2id avant chaque
+  commande opérationnelle. Aucune session n'est créée ni acceptée.
 - Les sondes actives sont limitées à `127.0.0.1` et `localhost`
   (`config/security_intelligence.json`). `full-local` ne lance aucun réseau.
 - Rapports JSON en 0600 sous `data/reports/`, base
@@ -198,16 +201,16 @@ La base se trouve par défaut dans `data/history/nour_sentinel.db`.
 ## Tests
 
 ```bash
-cargo test --manifest-path rust-engine/Cargo.toml   # 47 tests unitaires Rust
-.venv/bin/python -m unittest discover -s tests/python # 145 tests Python (lab complet)
-python3 -m unittest discover -s tests/integration    # 8 tests d'intégration
+cargo test --manifest-path rust-engine/Cargo.toml   # 45 tests unitaires Rust
+.venv/bin/python -m unittest discover -s tests/python # 150 tests Python (lab complet)
+.venv/bin/python -m unittest discover -s tests/integration # 9 tests d'intégration
 ```
 
 Les tests n'ouvrent aucune connexion externe : fixtures pour `nmap`,
 `testssl.sh`, `trivy`, journald, Docker, OSV/NVD/KEV/EPSS ; serveurs locaux
 éphémères pour SSH, HTTP et TLS ; historique, rapports et configuration
-temporaires. Sans `argon2-cffi`, 10 tests d'authentification sont ignorés
-(`145 tests exécutés, 10 ignorés`).
+temporaires. Sans `argon2-cffi`, 15 tests d'authentification sont ignorés
+(`150 tests exécutés, 15 ignorés`).
 
 ## Sécurité
 
@@ -218,6 +221,7 @@ disposez d'une autorisation explicite.
 - La vérification TCP est active, uniquement vers les cibles déclarées.
 - Les vérifications actives d'intelligence et les outils externes sont
   désactivés par défaut et limités au périmètre autorisé.
+- Aucune session locale réutilisable : chaque lancement vérifie Argon2id.
 - Aucune exploitation, aucun brute force, aucune collecte de secrets.
 - Aucun blocage automatique, aucune remédiation automatique.
 - Un port ouvert est une exposition présumée, jamais une vulnérabilité

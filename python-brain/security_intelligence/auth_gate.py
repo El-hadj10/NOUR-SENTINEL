@@ -1,4 +1,8 @@
-"""Auth Gate propriétaire — Argon2id, PHC et permissions strictes.
+"""Auth Gate propriétaire — Argon2id direct, verrou et permissions strictes.
+
+Aucune session locale n'est créée ni acceptée : chaque lancement
+opérationnel vérifie la phrase secrète contre le hash PHC. Le compteur
+d'échecs est persistant et un verrou ``flock`` sérialise les tentatives.
 
 Modèle de sécurité assumé : une protection logicielle locale ne résiste pas à
 un compte Linux compromis ni à root. Elle complète le chiffrement du disque,
@@ -9,10 +13,11 @@ dans un fichier 0600 appartenant à l'utilisateur courant.
 """
 
 import argparse
+import contextlib
+import fcntl
 import getpass
 import json
 import os
-import secrets
 import stat
 import sys
 import tempfile
@@ -21,10 +26,13 @@ from pathlib import Path
 
 MIN_SECRET_LENGTH = 16
 MAX_ATTEMPTS = 3
-SESSION_TTL_SECONDS = 300
+LOCKOUT_BASE_SECONDS = 30
+LOCKOUT_MAX_SECONDS = 900
+ATTEMPTS_VERSION = 1
 
 DEFAULT_AUTH_FILE = Path.home() / ".config" / "nour-sentinel" / "auth.phc"
-DEFAULT_SESSION_FILE = Path.home() / ".config" / "nour-sentinel" / "session.json"
+ATTEMPTS_FILENAME = "auth.attempts.json"
+LOCK_FILENAME = "auth.lock"
 
 
 class AuthError(RuntimeError):
@@ -32,28 +40,70 @@ class AuthError(RuntimeError):
 
 
 def auth_path(path=None):
-    return Path(
-        path or os.environ.get("NOUR_SENTINEL_AUTH_FILE") or DEFAULT_AUTH_FILE
-    ).expanduser()
+    """Chemin fixe du hash ; aucun environnement ne peut le rediriger."""
+
+    return Path(path) if path is not None else DEFAULT_AUTH_FILE
 
 
-def session_path(path=None):
-    return Path(
-        path or os.environ.get("NOUR_SENTINEL_SESSION") or DEFAULT_SESSION_FILE
-    ).expanduser()
+def attempts_path(path=None):
+    return auth_path(path).parent / ATTEMPTS_FILENAME
+
+
+def lock_path(path=None):
+    return auth_path(path).parent / LOCK_FILENAME
+
+
+def _open_private_directory(directory):
+    """Ouvre un dossier dédié sans suivre de lien et valide ses métadonnées."""
+
+    directory = Path(directory)
+
+    try:
+        descriptor = os.open(
+            directory,
+            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC,
+        )
+    except OSError as error:
+        raise AuthError(
+            f"dossier d'authentification absent ou refusé: {directory}"
+        ) from error
+
+    try:
+        info = os.fstat(descriptor)
+
+        if not stat.S_ISDIR(info.st_mode):
+            raise AuthError(f"dossier d'authentification non ordinaire: {directory}")
+
+        if info.st_uid != os.getuid():
+            raise AuthError(
+                "le dossier d'authentification n'appartient pas à l'utilisateur courant"
+            )
+
+        if stat.S_IMODE(info.st_mode) != 0o700:
+            raise AuthError(
+                f"permissions trop larges sur le dossier: {directory} (0700 requis)"
+            )
+    except Exception:
+        os.close(descriptor)
+        raise
+
+    return descriptor
 
 
 def _ensure_directory(directory):
-    existed = directory.exists()
-    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    directory = Path(directory)
 
-    # Ne jamais changer les permissions d'un répertoire personnel existant
-    # (par exemple $HOME) : seule la arborescence dédiée est durcie.
-    if not existed or directory.name == "nour-sentinel":
+    if not directory.exists():
+        directory.mkdir(parents=True, mode=0o700, exist_ok=True)
         os.chmod(directory, 0o700)
+
+    descriptor = _open_private_directory(directory)
+    os.close(descriptor)
 
 
 def _write_private(path, content):
+    """Écrit atomiquement un fichier 0600 dans un dossier dédié 0700."""
+
     path = Path(path)
     _ensure_directory(path.parent)
 
@@ -79,32 +129,95 @@ def _write_private(path, content):
         raise AuthError(f"écriture du secret impossible: {path}")
 
 
-def _read_private(path):
+def _read_private(path, label="secret", missing_ok=False):
+    """Lit un fichier sensible via un descripteur O_NOFOLLOW et fstat."""
+
     path = Path(path)
 
     try:
-        info = path.lstat()
-    except OSError as error:
+        descriptor = os.open(
+            path,
+            os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
+        )
+    except FileNotFoundError:
+        if missing_ok:
+            return None
         raise AuthError(
-            f"aucun secret configuré ({path}); exécutez --setup-auth"
-        ) from error
-
-    if stat.S_ISLNK(info.st_mode):
-        raise AuthError(f"fichier de secret symbolique refusé: {path}")
-
-    if not stat.S_ISREG(info.st_mode):
-        raise AuthError(f"fichier de secret non ordinaire refusé: {path}")
-
-    if info.st_uid != os.getuid():
-        raise AuthError("le fichier de secret n'appartient pas à l'utilisateur courant")
-
-    if info.st_mode & 0o077:
-        raise AuthError(f"permissions trop larges sur le secret: {path} (0600 requis)")
+            f"aucun {label} configuré ({path}); exécutez --setup-auth"
+        )
+    except OSError as error:
+        raise AuthError(f"{label} refusé ou illisible ({path}): {error}") from error
 
     try:
-        return path.read_text(encoding="utf-8").strip()
+        info = os.fstat(descriptor)
+
+        if not stat.S_ISREG(info.st_mode):
+            raise AuthError(f"{label} non ordinaire refusé: {path}")
+
+        if info.st_uid != os.getuid():
+            raise AuthError(
+                f"le {label} n'appartient pas à l'utilisateur courant"
+            )
+
+        if stat.S_IMODE(info.st_mode) != 0o600:
+            raise AuthError(
+                f"permissions trop larges sur le {label}: {path} (0600 requis)"
+            )
+
+        chunks = []
+
+        while True:
+            chunk = os.read(descriptor, 65536)
+
+            if not chunk:
+                break
+
+            chunks.append(chunk)
+
+        try:
+            return b"".join(chunks).decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise AuthError(f"{label} illisible: encodage UTF-8 attendu") from error
+    finally:
+        os.close(descriptor)
+
+
+@contextlib.contextmanager
+def _auth_lock(path=None):
+    """Verrou exclusif inter-processus, fichier ordinaire 0600."""
+
+    target = lock_path(path)
+    _ensure_directory(target.parent)
+
+    try:
+        descriptor = os.open(
+            target,
+            os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC,
+            0o600,
+        )
     except OSError as error:
-        raise AuthError(f"lecture du secret impossible: {error}") from error
+        raise AuthError(f"verrou d'authentification impossible: {error}") from error
+
+    try:
+        info = os.fstat(descriptor)
+
+        if not stat.S_ISREG(info.st_mode):
+            raise AuthError("verrou d'authentification non ordinaire refusé")
+
+        if info.st_uid != os.getuid():
+            raise AuthError(
+                "le verrou d'authentification n'appartient pas à l'utilisateur courant"
+            )
+
+        if stat.S_IMODE(info.st_mode) != 0o600:
+            raise AuthError(
+                f"permissions trop larges sur le verrou: {target} (0600 requis)"
+            )
+
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(descriptor)
 
 
 def _argon2():
@@ -149,27 +262,88 @@ def validate_secret(secret, minimum=MIN_SECRET_LENGTH):
     return secret
 
 
-def setup(secret, path=None, force=False, minimum=MIN_SECRET_LENGTH):
-    """Crée le hash Argon2id initial. Refuse d'écraser sans `force`."""
+def _empty_attempts():
+    return {"version": ATTEMPTS_VERSION, "failures": 0, "locked_until": 0}
 
-    validate_secret(secret, minimum)
+
+def _read_attempts(path=None):
+    text = _read_private(attempts_path(path), "état de limitation", missing_ok=True)
+
+    if text is None:
+        return _empty_attempts()
+
+    try:
+        data = json.loads(text)
+    except ValueError as error:
+        raise AuthError("état de limitation illisible") from error
+
+    if not isinstance(data, dict):
+        raise AuthError("état de limitation invalide")
+
+    failures = data.get("failures")
+    locked_until = data.get("locked_until")
+
+    if (
+        data.get("version") != ATTEMPTS_VERSION
+        or isinstance(failures, bool)
+        or not isinstance(failures, int)
+        or failures < 0
+        or isinstance(locked_until, bool)
+        or not isinstance(locked_until, int)
+        or locked_until < 0
+    ):
+        raise AuthError("état de limitation invalide")
+
+    return {
+        "version": ATTEMPTS_VERSION,
+        "failures": failures,
+        "locked_until": locked_until,
+    }
+
+
+def _write_attempts(path, state):
+    _write_private(
+        attempts_path(path),
+        json.dumps(state, sort_keys=True) + "\n",
+    )
+
+
+def _failure_delay(failures):
+    """30 s après 3 échecs, puis doublement plafonné à 15 minutes."""
+
+    if failures < MAX_ATTEMPTS:
+        return 0
+
+    exponent = min(failures - MAX_ATTEMPTS, 5)
+    return min(LOCKOUT_BASE_SECONDS * (2**exponent), LOCKOUT_MAX_SECONDS)
+
+
+def _record_failure(path, state, moment):
+    failures = state["failures"] + 1
+    delay = _failure_delay(failures)
+    locked_until = moment + delay if delay else 0
+
+    _write_attempts(
+        path,
+        {
+            "version": ATTEMPTS_VERSION,
+            "failures": failures,
+            "locked_until": locked_until,
+        },
+    )
+
+    return delay
+
+
+def _lockout_remaining(state, moment):
+    return max(0, int(state["locked_until"]) - int(moment))
+
+
+def _verify_unlocked(secret, path=None):
+    """Vérification bas niveau ; l'appelant doit détenir le verrou."""
+
     target = auth_path(path)
-
-    if target.exists() and not force:
-        raise AuthError(
-            "un secret existe déjà; utilisez --change-auth pour le remplacer"
-        )
-
-    hasher, _, _, _ = _argon2()
-    _write_private(target, hasher.hash(secret) + "\n")
-
-    return target
-
-
-def verify(secret, path=None):
-    """Vérifie la phrase secrète. Retourne False sur simple désaccord."""
-
-    stored = _read_private(auth_path(path))
+    stored = _read_private(target).strip()
     hasher, mismatch, invalid, verification = _argon2()
 
     try:
@@ -182,147 +356,150 @@ def verify(secret, path=None):
         raise AuthError(f"vérification Argon2id impossible: {error}") from error
 
     # Mise à niveau silencieuse si les paramètres ont évolué : le secret en
-    # clair est encore disponible uniquement dans cette fonction.
+    # clair n'existe que pendant cette vérification.
     if hasher.check_needs_rehash(stored):
-        _write_private(auth_path(path), hasher.hash(secret) + "\n")
+        _write_private(target, hasher.hash(secret) + "\n")
 
     return True
 
 
+def verify(secret, path=None):
+    """Vérifie un secret sous verrou, sans modifier le compteur d'échecs."""
+
+    with _auth_lock(path):
+        return _verify_unlocked(secret, path)
+
+
+def setup(secret, path=None, force=False, minimum=MIN_SECRET_LENGTH):
+    """Crée le hash Argon2id initial. Refuse d'écraser sans ``force``."""
+
+    validate_secret(secret, minimum)
+    target = auth_path(path)
+
+    with _auth_lock(target):
+        if target.exists() and not force:
+            raise AuthError(
+                "un secret existe déjà; utilisez --change-auth pour le remplacer"
+            )
+
+        hasher, _, _, _ = _argon2()
+        _write_private(target, hasher.hash(secret) + "\n")
+        _write_attempts(target, _empty_attempts())
+
+    return target
+
+
 def change(old_secret, new_secret, path=None, minimum=MIN_SECRET_LENGTH):
     """Vérifie l'ancien secret avant de remplacer le hash."""
-
-    if not verify(old_secret, path):
-        raise AuthError("ancienne phrase secrète incorrecte")
 
     validate_secret(new_secret, minimum)
 
     if old_secret == new_secret:
         raise AuthError("la nouvelle phrase secrète doit être différente")
 
-    return setup(new_secret, path=path, force=True, minimum=minimum)
+    target = auth_path(path)
+
+    with _auth_lock(target):
+        now = int(time.time())
+        state = _read_attempts(target)
+        remaining = _lockout_remaining(state, now)
+
+        if remaining:
+            raise AuthError(
+                f"authentification verrouillée; réessayez dans {remaining} s"
+            )
+
+        if not _verify_unlocked(old_secret, target):
+            delay = _record_failure(target, state, now)
+
+            if delay:
+                raise AuthError(
+                    "ancienne phrase secrète incorrecte; "
+                    f"compte verrouillé pendant {delay} s"
+                )
+
+            raise AuthError("ancienne phrase secrète incorrecte")
+
+        hasher, _, _, _ = _argon2()
+        _write_private(target, hasher.hash(new_secret) + "\n")
+        _write_attempts(target, _empty_attempts())
+
+    return target
 
 
-def login(
-    attempts=MAX_ATTEMPTS,
+def authenticate(
+    secret=None,
     path=None,
     require_tty=True,
     getpass_fn=None,
-    sleep_fn=time.sleep,
     input_stream=None,
+    max_attempts=MAX_ATTEMPTS,
+    now_fn=time.time,
 ):
-    """Trois tentatives, temporisation progressive, terminal requis."""
+    """Vérifie Argon2id directement, avec verrou et limitation persistante.
+
+    Aucune session n'est créée. Un échec répété est enregistré dans
+    ``auth.attempts.json`` ; trois échecs consécutifs déclenchent un
+    verrouillage de 30 s, doublé progressivement jusqu'à 15 minutes.
+    """
 
     target = auth_path(path)
     _read_private(target)
 
     stream = input_stream or sys.stdin
 
-    if require_tty:
-        is_tty = getattr(stream, "isatty", lambda: False)()
-
-        if not is_tty:
-            raise AuthError(
-                "terminal interactif requis; utilisez ./lancer-nour-sentinel.sh"
-            )
+    if require_tty and not getattr(stream, "isatty", lambda: False)():
+        raise AuthError(
+            "terminal interactif requis; lancez ./lancer-nour-sentinel.sh"
+        )
 
     prompt = getpass_fn or getpass.getpass
+    attempts = max(1, int(max_attempts))
 
     for attempt in range(1, attempts + 1):
-        secret = prompt("Phrase secrète NOUR SENTINEL : ")
+        moment = int(now_fn())
 
-        if verify(secret, target):
-            return True
+        with _auth_lock(target):
+            state = _read_attempts(target)
+            remaining = _lockout_remaining(state, moment)
 
-        if attempt < attempts:
-            delay = 0.5 * attempt
-            print(
-                f"Authentification refusée ({attempt}/{attempts}); "
-                f"nouvel essai dans {delay:g}s.",
-                file=sys.stderr,
+            if remaining:
+                raise AuthError(
+                    f"authentification verrouillée; réessayez dans {remaining} s"
+                )
+
+        candidate = secret if secret is not None else prompt(
+            "Phrase secrète NOUR SENTINEL : "
+        )
+
+        moment = int(now_fn())
+
+        with _auth_lock(target):
+            state = _read_attempts(target)
+            remaining = _lockout_remaining(state, moment)
+
+            if remaining:
+                raise AuthError(
+                    f"authentification verrouillée; réessayez dans {remaining} s"
+                )
+
+            if _verify_unlocked(candidate, target):
+                _write_attempts(target, _empty_attempts())
+                return True
+
+            delay = _record_failure(target, state, moment)
+
+        if delay:
+            raise AuthError(
+                f"authentification refusée; compte verrouillé pendant {delay} s"
             )
-            sleep_fn(delay)
+
+        print(
+            f"Authentification refusée ({attempt}/{attempts}).",
+            file=sys.stderr,
+        )
 
     raise AuthError(f"authentification refusée après {attempts} tentative(s)")
-
-
-def create_session(path=None, ttl=SESSION_TTL_SECONDS):
-    """Crée une session locale courte, lisible par le moteur Rust."""
-
-    ttl = max(30, min(int(ttl), 3600))
-    now = int(time.time())
-    target = session_path(path)
-
-    content = json.dumps(
-        {
-            "version": 1,
-            "created_at": now,
-            "expires_at": now + ttl,
-            "nonce": secrets.token_hex(16),
-        },
-        sort_keys=True,
-    )
-
-    _write_private(target, content + "\n")
-
-    return target
-
-
-def session_valid(path=None, now=None):
-    """Valide une session : fichier ordinaire 0600 et expiration future."""
-
-    target = session_path(path)
-
-    try:
-        info = target.lstat()
-    except OSError:
-        return False
-
-    if not stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode):
-        return False
-
-    if info.st_uid != os.getuid() or info.st_mode & 0o077:
-        return False
-
-    try:
-        session = json.loads(target.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return False
-
-    if not isinstance(session, dict):
-        return False
-
-    expires_at = session.get("expires_at")
-
-    if isinstance(expires_at, bool) or not isinstance(expires_at, int):
-        return False
-
-    current = int(time.time()) if now is None else int(now)
-
-    return current < expires_at <= current + 3600
-
-
-def clear_session(path=None):
-    try:
-        session_path(path).unlink()
-    except OSError:
-        pass
-
-
-def ensure_authenticated(
-    auth_file=None,
-    session_file=None,
-    ttl=SESSION_TTL_SECONDS,
-    require_tty=True,
-):
-    """Réutilise une session valide ou demande la phrase secrète."""
-
-    if session_valid(session_file):
-        return session_path(session_file)
-
-    login(path=auth_file, require_tty=require_tty)
-
-    return create_session(session_file, ttl=ttl)
 
 
 def _prompt_new_secret(minimum=MIN_SECRET_LENGTH):
@@ -342,23 +519,15 @@ def main(argv=None):
         prog="auth_gate",
         description="Authentification propriétaire NOUR SENTINEL (Argon2id).",
     )
-    parser.add_argument("--version", action="version", version="0.6.0-beta.1")
+    parser.add_argument("--version", action="version", version="0.6.0-beta.2")
 
     commands = parser.add_subparsers(dest="command", required=True)
 
-    setup_parser = commands.add_parser("setup", help="créer le secret initial")
-    setup_parser.add_argument("--auth-file")
-
-    change_parser = commands.add_parser("change", help="changer le secret")
-    change_parser.add_argument("--auth-file")
-
-    login_parser = commands.add_parser("login", help="s'authentifier")
-    login_parser.add_argument("--auth-file")
-    login_parser.add_argument("--session-file")
-    login_parser.add_argument("--ttl", type=int, default=SESSION_TTL_SECONDS)
-
-    status_parser = commands.add_parser("status", help="état de la session")
-    status_parser.add_argument("--session-file")
+    commands.add_parser("setup", help="créer le secret initial")
+    commands.add_parser("change", help="changer le secret")
+    commands.add_parser(
+        "authenticate", help="vérifier la phrase secrète pour ce lancement"
+    )
 
     arguments = parser.parse_args(argv)
 
@@ -366,35 +535,30 @@ def main(argv=None):
         if arguments.command == "setup":
             if not sys.stdin.isatty():
                 raise AuthError("terminal interactif requis pour créer le secret")
-            target = setup(_prompt_new_secret(), path=arguments.auth_file)
+
+            target = setup(_prompt_new_secret())
             print(f"Secret Argon2id créé: {target}")
             return 0
 
         if arguments.command == "change":
             if not sys.stdin.isatty():
                 raise AuthError("terminal interactif requis pour changer le secret")
+
             old = getpass.getpass("Ancienne phrase secrète : ")
             new = _prompt_new_secret()
-            target = change(old, new, path=arguments.auth_file)
+            target = change(old, new)
             print(f"Secret Argon2id remplacé: {target}")
             return 0
 
-        if arguments.command == "login":
-            login(path=arguments.auth_file)
-            target = create_session(arguments.session_file, ttl=arguments.ttl)
-            print(f"Session créée: {target}")
+        if arguments.command == "authenticate":
+            authenticate()
             return 0
-
-        if arguments.command == "status":
-            if session_valid(arguments.session_file):
-                print("session valide")
-                return 0
-
-            print("session absente ou expirée")
-            return 1
 
     except AuthError as error:
         print(f"[AUTH ERROR] {error}", file=sys.stderr)
+        return 2
+    except (KeyboardInterrupt, EOFError):
+        print("[AUTH ERROR] saisie interrompue", file=sys.stderr)
         return 2
 
     return 2

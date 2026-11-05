@@ -161,7 +161,6 @@ def validate_config(data):
     journal = data.get("journal") or {}
     docker = data.get("docker") or {}
     online = data.get("online") or {}
-    auth = data.get("auth") or {}
     reports = data.get("reports") or {}
 
     for section, name in (
@@ -170,7 +169,6 @@ def validate_config(data):
         (journal, "journal"),
         (docker, "docker"),
         (online, "online"),
-        (auth, "auth"),
         (reports, "reports"),
     ):
         if not isinstance(section, dict):
@@ -184,17 +182,6 @@ def validate_config(data):
         "max_response_bytes": _bounded_int(
             data.get("max_response_bytes"), 65536, 1024, 1_048_576, "max_response_bytes"
         ),
-        "auth": {
-            "min_secret_length": _bounded_int(
-                auth.get("min_secret_length"), 16, 16, 128, "auth.min_secret_length"
-            ),
-            "max_attempts": _bounded_int(
-                auth.get("max_attempts"), 3, 1, 5, "auth.max_attempts"
-            ),
-            "session_ttl_seconds": _bounded_int(
-                auth.get("session_ttl_seconds"), 300, 30, 3600, "auth.session_ttl_seconds"
-            ),
-        },
         "inventory": {
             "packages": _bool(inventory.get("packages"), True, "inventory.packages"),
             "services": _bool(inventory.get("services"), True, "inventory.services"),

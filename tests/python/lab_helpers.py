@@ -1,6 +1,5 @@
 """Fixtures partagées des tests du laboratoire (hors découverte unittest)."""
 
-import json
 import os
 import sys
 from pathlib import Path
@@ -22,11 +21,6 @@ def make_config(directory):
         "authorized_targets": ("127.0.0.1", "localhost"),
         "timeout": 2.0,
         "max_response_bytes": 65536,
-        "auth": {
-            "min_secret_length": 16,
-            "max_attempts": 3,
-            "session_ttl_seconds": 300,
-        },
         "inventory": {
             "packages": True,
             "services": True,
@@ -55,15 +49,3 @@ def write_private(path, text, mode=0o600):
     os.chmod(path, mode)
 
     return path
-
-
-def write_session(directory, ttl=300, now=None):
-    import time
-
-    moment = int(time.time()) if now is None else int(now)
-    path = Path(directory) / "session.json"
-
-    return write_private(
-        path,
-        json.dumps({"version": 1, "expires_at": moment + ttl}),
-    )
