@@ -20,6 +20,9 @@ venv/
 *.tmp
 .DS_Store
 
+# Archives de livraison
+*.zip
+
 # Laboratoire : secrets, sessions, caches et rapports
 *.phc
 *.session.json
