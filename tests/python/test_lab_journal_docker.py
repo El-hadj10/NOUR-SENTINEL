@@ -8,7 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT / "python-brain"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from lab_helpers import make_config
+from lab_helpers import AuthorizedTestCase, make_config
 from security_intelligence.applications import docker
 from security_intelligence.intrusion import journal
 
@@ -41,7 +41,7 @@ def journal_runner():
     return runner
 
 
-class TestJournal(unittest.TestCase):
+class TestJournal(AuthorizedTestCase):
     def test_aggregates_without_exporting_raw_logs(self):
         with tempfile.TemporaryDirectory() as directory:
             config = make_config(directory)
@@ -78,7 +78,7 @@ class TestJournal(unittest.TestCase):
             self.assertIn("journalctl", errors[0])
 
 
-class TestDocker(unittest.TestCase):
+class TestDocker(AuthorizedTestCase):
     def test_parses_and_flags_wildcard_publication(self):
         container = {
             "ID": "a" * 64,

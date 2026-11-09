@@ -11,7 +11,7 @@ confiance, et quelle vérification humaine reste nécessaire.
 
 | Couche | Responsabilité | Preuves produites |
 |---|---|---|
-| Rust (`inventory.rs`) | Sockets, processus, unités systemd, conteneurs, interfaces | `/proc`, `/sys`, `ip -j addr` |
+| Rust (`inventory.rs`) | Sockets TCP/UDP, processus, unités systemd, conteneurs, interfaces | `/proc`, `/sys`, `ip -j addr` |
 | JSON (`protocol.json` 3.0) | Contrat versionné collecte → analyse | Schéma des constats |
 | Python (`intelligence/`) | Six capacités d'analyse | Constats normalisés |
 | Risk engine | Déduplication, score, priorisation | `priority_score`, `P1..P4` |
@@ -59,6 +59,11 @@ système audité.
   `PubkeyAuthentication`, `PermitEmptyPasswords`, `MaxAuthTries`,
   `AuthenticationMethods`, `X11Forwarding`. Les blocs `Match` sont ignorés.
 - `login.defs` : expiration, longueur minimale, avertissement, algorithme.
+- `PASS_MAX_DAYS` : `99999` (pas d'expiration forcée) n'est plus signalé ;
+  une rotation inférieure à 90 jours est un signal `low`, pas un verdict.
+  Le seuil est **contextuel** : NIST SP 800-63B §5.1.1.2 déconseille la
+  rotation arbitraire, tandis que PCI DSS v4.0 (8.3.9) impose 90 jours aux
+  comptes concernés. La recommandation renvoie à ces deux cadres.
 - `sudoers` : règles `NOPASSWD`.
 - Aucun mot de passe, aucune empreinte, aucune tentative de connexion.
 
@@ -118,7 +123,10 @@ score = base(gravité) × facteur(confiance) × facteur(exposition)
 
 ## 7. Garde-fous
 
-- Périmètre autorisé obligatoire ; le scan des appareils ARP reste désactivé.
+- Le scanner Rust ne balaie pas automatiquement les appareils ARP. Dans le
+  laboratoire Python, la découverte reste passive et un seul voisin choisi
+  explicitement peut être sondé après confirmation d'autorisation, avec un
+  plafond de 32 ports par protocole.
 - Aucune exploitation, aucun brute force, aucune action automatique.
 - Aucune collecte de secrets.
 - `active_probing` désactivé par défaut ; vérifications actives uniquement

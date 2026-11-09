@@ -23,6 +23,9 @@ pub struct PortObservation {
 
 /// Découverte passive des appareils présents dans la table ARP Linux.
 pub fn discover_neighbors() -> Vec<NetworkDevice> {
+    crate::gate::require()
+        .expect("découverte ARP refusée sans autorisation");
+
     let mut devices = Vec::new();
 
     let content = match fs::read_to_string("/proc/net/arp") {
@@ -134,6 +137,9 @@ pub fn scan_tcp_ports(
     timeout_ms: u64,
     max_concurrency: usize,
 ) -> Vec<PortObservation> {
+    crate::gate::require()
+        .expect("scan TCP refusé sans autorisation");
+
     if targets.is_empty()
         || ports.is_empty()
         || timeout_ms == 0

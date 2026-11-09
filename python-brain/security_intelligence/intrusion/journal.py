@@ -4,13 +4,17 @@ Les lignes brutes ne quittent jamais cette fonction : seuls des compteurs,
 des adresses source et des indicateurs normalisés sont conservés.
 """
 
+import authz
 from intelligence.intrusion import detector
+from security_intelligence import collection_trace
 from security_intelligence.fingerprinting.inventory import run_command
 
 
+@collection_trace.instrument("system", "journal.collect")
 def collect(config, host, runner=None, exposure="local"):
     """Retourne `(findings, metadata, errors)` sans conserver de log brut."""
 
+    authz.require()
     runner = runner or run_command
     lines = int((config or {}).get("journal", {}).get("lines") or 200)
 

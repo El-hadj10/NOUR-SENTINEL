@@ -8,7 +8,9 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT / "python-brain"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from lab_helpers import AuthorizedTestCase
 from security_intelligence import VERSION
 from security_intelligence import reports
 from security_intelligence.store import IntelStore
@@ -35,7 +37,7 @@ def sample_report():
     }
 
 
-class TestIntelStore(unittest.TestCase):
+class TestIntelStore(AuthorizedTestCase):
     def test_store_roundtrip_and_private_permissions(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "history" / "intel.db"
@@ -78,7 +80,7 @@ class TestIntelStore(unittest.TestCase):
             store.close()
 
 
-class TestReports(unittest.TestCase):
+class TestReports(AuthorizedTestCase):
     def test_report_is_private_and_valid_json(self):
         with tempfile.TemporaryDirectory() as directory:
             path = reports.write_report(sample_report(), Path(directory) / "reports")

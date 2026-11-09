@@ -6,9 +6,11 @@ Aucun corps HTTP n'est téléchargé, aucune redirection n'est suivie.
 
 import ssl
 
+import authz
 from intelligence.applications import http_analyzer
 from intelligence.fingerprinting import services
 from intelligence.models import make_finding
+from security_intelligence import collection_trace
 from security_intelligence.config import resolve_target
 
 
@@ -47,8 +49,11 @@ def _identity_findings(identities, target, ip, port):
     return findings
 
 
+@collection_trace.instrument("tcp", "service_probe.probe_ssh")
 def probe_ssh(target, port=22, timeout=2.0, allowed=()):
     """Lit une bannière SSH, sans tentative d'authentification."""
+
+    authz.require()
 
     try:
         ip = resolve_target(target, allowed)[0]
@@ -68,8 +73,11 @@ def probe_ssh(target, port=22, timeout=2.0, allowed=()):
     ), []
 
 
+@collection_trace.instrument("tcp", "service_probe.probe_http")
 def probe_http(target, port, path="/", timeout=2.0, allowed=(), use_tls=None):
     """Requête HEAD unique ; aucune redirection suivie, aucun corps lu."""
+
+    authz.require()
 
     try:
         ip = resolve_target(target, allowed)[0]

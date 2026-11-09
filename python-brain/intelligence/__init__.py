@@ -4,6 +4,8 @@ Six capacités : fingerprinting, intelligence CVE, audit TLS, politiques
 d'authentification, détection par journaux, analyse applicative.
 """
 
-VERSION = "0.5.0"
+from version import CORE_VERSION
 
-__all__ = ["VERSION"]
+VERSION = CORE_VERSION
+
+__all__ = ["VERSION", "CORE_VERSION"]

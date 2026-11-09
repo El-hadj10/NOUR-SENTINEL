@@ -10,7 +10,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT / "python-brain"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from lab_helpers import make_config
+from lab_helpers import AuthorizedTestCase, make_config
 from security_intelligence.vulnerabilities import online
 
 
@@ -69,7 +69,7 @@ class FakeTransport:
         raise AssertionError(f"URL inattendue: {url}")
 
 
-class TestOnlineIntel(unittest.TestCase):
+class TestOnlineIntel(AuthorizedTestCase):
     def test_assess_packages_enriches_kev_and_epss(self):
         with tempfile.TemporaryDirectory() as directory:
             config = make_config(directory)

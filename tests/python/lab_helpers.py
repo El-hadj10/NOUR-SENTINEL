@@ -2,13 +2,16 @@
 
 import os
 import sys
+import unittest
 from pathlib import Path
+from unittest import mock
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 if str(PROJECT_ROOT / "python-brain") not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT / "python-brain"))
 
+import authz  # noqa: E402
 from security_intelligence import VERSION  # noqa: E402
 
 
@@ -40,6 +43,16 @@ def make_config(directory):
         "reports_dir": directory / "reports",
         "database": directory / "history" / "nour_sentinel_intel.db",
     }
+
+
+class AuthorizedTestCase(unittest.TestCase):
+    """Fixture unitaire : simule une autorisation déjà délivrée."""
+
+    def setUp(self):
+        super().setUp()
+        authorization = mock.patch.object(authz, "require")
+        authorization.start()
+        self.addCleanup(authorization.stop)
 
 
 def write_private(path, text, mode=0o600):

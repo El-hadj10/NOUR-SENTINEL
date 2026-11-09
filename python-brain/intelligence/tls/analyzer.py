@@ -13,6 +13,7 @@ import ssl
 from datetime import datetime, timezone
 
 from intelligence.models import make_finding
+from security_intelligence import collection_trace
 
 WEAK_PROTOCOLS = {
     "SSLv2": "critical",
@@ -225,6 +226,7 @@ def analyze_certificate(certificate, asset=None, port=None, exposure="lan"):
     return findings
 
 
+@collection_trace.instrument("tcp", "tls.inspect")
 def inspect(ip, port, timeout=2.0):
     """Négocie TLS pour observer version et suite. Réseau : à autoriser."""
 

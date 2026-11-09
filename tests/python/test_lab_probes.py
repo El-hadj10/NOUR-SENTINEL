@@ -7,11 +7,13 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT / "python-brain"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from lab_helpers import AuthorizedTestCase
 from security_intelligence.fingerprinting import service_probe
 
 
-class TestSshProbe(unittest.TestCase):
+class TestSshProbe(AuthorizedTestCase):
     def test_banner_is_probable(self):
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.bind(("127.0.0.1", 0))
@@ -52,7 +54,7 @@ class TestSshProbe(unittest.TestCase):
         self.assertIn("non autorisée", errors[0])
 
 
-class TestHttpProbe(unittest.TestCase):
+class TestHttpProbe(AuthorizedTestCase):
     def test_head_response_is_analyzed(self):
         class Handler(BaseHTTPRequestHandler):
             def do_HEAD(self):

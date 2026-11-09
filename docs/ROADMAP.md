@@ -103,14 +103,31 @@
 - [x] 3 E2E PTY avec hash réel, session forgée ignorée et mauvais secret verrouillé.
 - [x] 45 tests Rust, 150 tests Python, 9 tests d'intégration.
 
-## VERSION 0.6.0-beta.3 — Durcissement & corrélation
+## VERSION 0.6.0-beta.3 — Entry Point Hardening
 
-- [ ] Vérification des correctifs de distribution avant « applicable confirmée ».
-- [ ] Preuves et faux positifs documentés sur un panel de distributions.
-- [ ] Schéma de rapport stable et migrations SQLite testées.
-- [ ] Exécution contrôlée de testssl.sh et nmap avec artefacts horodatés.
-- [ ] Actif → version → CVE → KEV/EPSS reliés dans l'historique.
-- [ ] Rapports enrichis et exportables.
+- [x] Auth Gate Argon2id dans le processus Python avant lecture du payload.
+- [x] Handshake Rust → Python : aucune configuration, ARP ou TCP avant `AUTH_OK`.
+- [x] Interpréteur déterministe `.venv/bin/python` pour le cerveau Python.
+- [x] Jeton d'autorisation mémoire non persistant et refus des appels directs.
+- [x] Tests de refus direct de `main.py`, `engine.analyze()` et `lab.run_*`.
+- [x] Instrumentation des 46 points de collecte, rapports et SQLite compris.
+- [x] `verify()` soumis au même compteur et au même verrouillage qu'`authenticate()`.
+- [x] Inspection statique : appels réseau, outils, SQLite et rapports recensés et gardés.
+- [x] Auto-doublons corrigés, UDP/UDP6 attribués, wildcards IPv4/IPv6 normalisés.
+- [x] Identification système complète et statut réel des six capacités.
+- [x] `PASS_MAX_DAYS` révisé, seuil de 90 jours documenté comme contextuel (NIST SP 800-63B, PCI DSS 8.3.9).
+- [x] Preuves P0.3 : aucune ARP/TCP/commande/rapport/SQLite avant `AUTH_OK`.
+- [x] Preuves P0.4 : concurrence, compteur intègre, états malformés, `verify()` verrouillé, redémarrage cohérent.
+- [x] Verrou Rust interne (`gate::require()`) dans `scanner::*` et `history::*`, activé après `AUTH_OK`.
+- [x] Six statuts de capacité et inventaire UDP à quatre niveaux de preuve.
+- [x] Versions `core_version`/`lab_version`/`protocol_version` dans les rapports et la bannière.
+- [x] `discover` passif et `scan` confirmé, bornés à une IPv4 ARP et 32 ports par protocole.
+- [x] Profils d'agressivité `passif`/`standard`/`agressif` (ports, timeout, concurrence), sans lever les garde-fous.
+- [x] 52 tests Rust, 231 tests Python, 11 tests d'intégration.
+
+Reste pour les itérations suivantes : vérification des correctifs de
+distribution, preuves multi-distributions, schéma stable, exécution contrôlée
+de testssl.sh/nmap et corrélation actif → version → CVE → KEV/EPSS.
 
 ## VERSION 0.6.0 — Fusion stable
 

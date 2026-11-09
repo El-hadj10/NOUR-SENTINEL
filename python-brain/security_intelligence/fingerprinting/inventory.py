@@ -9,6 +9,9 @@ import re
 import socket
 import subprocess
 
+import authz
+from security_intelligence import collection_trace
+
 DEFAULT_TIMEOUT = 15
 
 PACKAGE_SIGNATURES = (
@@ -24,6 +27,7 @@ PACKAGE_SIGNATURES = (
 )
 
 
+@collection_trace.instrument("system", "inventory.run_command")
 def run_command(argv, timeout=DEFAULT_TIMEOUT):
     """Exécute une commande sans shell ; ne lève jamais pour un code non nul."""
 
@@ -59,6 +63,7 @@ def parse_os_release(text):
     return values
 
 
+@collection_trace.instrument("system", "inventory.read_os_release")
 def read_os_release(path="/etc/os-release"):
     try:
         from pathlib import Path
@@ -95,9 +100,11 @@ def parse_package_output(text, manager):
     return packages
 
 
+@collection_trace.instrument("system", "inventory.list_packages")
 def list_packages(runner=None):
     """dpkg prioritaire, rpm en repli. Retourne `(gestionnaire, paquets)`."""
 
+    authz.require()
     runner = runner or run_command
 
     dpkg = runner(
@@ -139,7 +146,9 @@ def parse_systemd_units(text):
     return units
 
 
+@collection_trace.instrument("system", "inventory.list_services")
 def list_services(runner=None):
+    authz.require()
     runner = runner or run_command
 
     result = runner(
@@ -163,7 +172,10 @@ def list_services(runner=None):
     return parse_systemd_units(result.get("stdout")), None
 
 
-def parse_ss_output(text):
+def parse_ss_output(text, protocol="tcp"):
+    """Parse `ss` sans confondre socket lié et service disponible."""
+
+    protocol = "udp" if str(protocol).lower() == "udp" else "tcp"
     listeners = []
 
     for raw_line in (text or "").splitlines():
@@ -206,6 +218,8 @@ def parse_ss_output(text):
             "address": address,
             "port": port,
             "family": family,
+            "protocol": protocol,
+            "state": "bound" if protocol == "udp" else "listen",
         }
 
         if listener not in listeners:
@@ -214,15 +228,36 @@ def parse_ss_output(text):
     return sorted(listeners, key=lambda item: (item["address"], item["port"]))
 
 
+@collection_trace.instrument("system", "inventory.list_listeners")
 def list_listeners(runner=None):
+    authz.require()
     runner = runner or run_command
 
-    result = runner(["ss", "-ltnH"], DEFAULT_TIMEOUT)
+    listeners = []
+    errors = []
 
-    if result.get("returncode") != 0:
-        return [], f"ss: {str(result.get('stderr') or '').strip()[:160] or 'échec'}"
+    for protocol, flag in (("tcp", "-ltnH"), ("udp", "-lunH")):
+        result = runner(["ss", flag], DEFAULT_TIMEOUT)
 
-    return parse_ss_output(result.get("stdout")), None
+        if result.get("returncode") != 0:
+            errors.append(
+                f"ss {protocol}: "
+                f"{str(result.get('stderr') or '').strip()[:120] or 'échec'}"
+            )
+            continue
+
+        listeners.extend(parse_ss_output(result.get("stdout") or "", protocol))
+
+    deduplicated = []
+
+    for listener in sorted(
+        listeners,
+        key=lambda item: (item["protocol"], item["address"], item["port"]),
+    ):
+        if listener not in deduplicated:
+            deduplicated.append(listener)
+
+    return deduplicated, "; ".join(errors) or None
 
 
 def fingerprint_packages(packages):
@@ -257,9 +292,11 @@ def fingerprint_packages(packages):
     return products
 
 
+@collection_trace.instrument("system", "inventory.collect")
 def collect(config):
     """Retourne un inventaire local sans jamais lancer de scan réseau."""
 
+    authz.require()
     options = (config or {}).get("inventory") or {}
     errors = []
 
@@ -267,7 +304,10 @@ def collect(config):
     host = {
         "hostname": socket.gethostname(),
         "kernel": platform.release(),
+        "architecture": platform.machine(),
         "distribution": os_release.get("PRETTY_NAME") or platform.platform(),
+        "os_id": os_release.get("ID"),
+        "os_version": os_release.get("VERSION_ID"),
     }
 
     packages = []

@@ -8,7 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT / "python-brain"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from lab_helpers import make_config
+from lab_helpers import AuthorizedTestCase, make_config
 from security_intelligence.fingerprinting import inventory
 
 
@@ -44,6 +44,13 @@ def make_runner(dpkg_rc=0, rpm_rc=0):
             }
 
         if argv[0] == "ss":
+            if "-lunH" in argv:
+                return {
+                    "returncode": 0,
+                    "stdout": "UNCONN 0 0 0.0.0.0:5353 0.0.0.0:*\n",
+                    "stderr": "",
+                }
+
             return {
                 "returncode": 0,
                 "stdout": (
@@ -59,7 +66,7 @@ def make_runner(dpkg_rc=0, rpm_rc=0):
     return runner
 
 
-class TestInventoryParsers(unittest.TestCase):
+class TestInventoryParsers(AuthorizedTestCase):
     def test_os_release(self):
         values = inventory.parse_os_release(
             'NAME="Ubuntu"\nVERSION_ID="26.04"\n# commentaire\nPRETTY_NAME=Ubuntu 26.04 LTS\n'
@@ -94,12 +101,46 @@ class TestInventoryParsers(unittest.TestCase):
 
         self.assertEqual(len(listeners), 3)
         self.assertIn(
-            {"address": "127.0.0.1", "port": 631, "family": "ipv4"}, listeners
+            {
+                "address": "127.0.0.1",
+                "port": 631,
+                "family": "ipv4",
+                "protocol": "tcp",
+                "state": "listen",
+            },
+            listeners,
         )
-        self.assertIn({"address": "::", "port": 22, "family": "ipv6"}, listeners)
         self.assertIn(
-            {"address": "0.0.0.0", "port": 80, "family": "ipv4"}, listeners
+            {
+                "address": "::",
+                "port": 22,
+                "family": "ipv6",
+                "protocol": "tcp",
+                "state": "listen",
+            },
+            listeners,
         )
+        self.assertIn(
+            {
+                "address": "0.0.0.0",
+                "port": 80,
+                "family": "ipv4",
+                "protocol": "tcp",
+                "state": "listen",
+            },
+            listeners,
+        )
+
+    def test_udp_socket_is_bound_not_a_verified_service(self):
+        listeners = inventory.parse_ss_output(
+            "UNCONN 0 0 0.0.0.0:5353 0.0.0.0:*\n"
+            "UNCONN 0 0 [::]:5353 [::]:*\n",
+            "udp",
+        )
+
+        self.assertEqual(len(listeners), 2)
+        self.assertTrue(all(item["protocol"] == "udp" for item in listeners))
+        self.assertTrue(all(item["state"] == "bound" for item in listeners))
 
     def test_systemd_units(self):
         units = inventory.parse_systemd_units(
@@ -125,22 +166,40 @@ class TestInventoryParsers(unittest.TestCase):
         self.assertTrue(all(item["confidence"] == "confirmed" for item in products))
 
 
-class TestInventoryCollect(unittest.TestCase):
+class TestInventoryCollect(AuthorizedTestCase):
     def test_collect_with_fake_commands(self):
         with tempfile.TemporaryDirectory() as directory:
             config = make_config(directory)
 
             with mock.patch.object(
                 inventory, "run_command", make_runner()
+            ), mock.patch.object(
+                inventory,
+                "read_os_release",
+                return_value={
+                    "PRETTY_NAME": "Test Linux 1.0",
+                    "ID": "testos",
+                    "VERSION_ID": "1.0",
+                },
             ):
                 data = inventory.collect(config)
 
             self.assertEqual(data["package_manager"], "dpkg")
             self.assertEqual(data["package_count"], 4)
             self.assertEqual(len(data["services"]), 2)
-            self.assertEqual(len(data["listeners"]), 3)
+            self.assertEqual(len(data["listeners"]), 4)
+            self.assertTrue(
+                any(
+                    item["protocol"] == "udp" and item["state"] == "bound"
+                    for item in data["listeners"]
+                )
+            )
             self.assertIn("OpenSSH", {p["product"] for p in data["products"]})
             self.assertIn("hostname", data["host"])
+            self.assertEqual(data["host"]["distribution"], "Test Linux 1.0")
+            self.assertEqual(data["host"]["os_id"], "testos")
+            self.assertEqual(data["host"]["os_version"], "1.0")
+            self.assertTrue(data["host"]["architecture"])
             self.assertEqual(data["errors"], [])
 
     def test_collect_reports_package_failure(self):

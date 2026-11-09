@@ -1,136 +1,591 @@
 {
     "protocol": "NOUR-SENTINEL-JSON",
     "version": "3.0",
+    "protocol_version": "3.0",
+    "core_version": "0.5.0",
+    "lab_version": "0.6.0-beta.3",
     "encoding": "UTF-8",
     "transport": "stdin-stdout",
     "sender": "rust-network-engine",
     "receiver": "python-brain",
-    "message_format": {
-        "source": "rust-network-engine",
-        "devices": [],
-        "events": [],
-        "analysis_config": {
-            "sensitive_ports": [23, 3389, 5900],
-            "known_services": {
-                "22": "SSH",
-                "80": "HTTP",
-                "443": "HTTPS"
-            }
+    "document": {
+        "kind": "reference",
+        "read_by_code": false,
+        "note": "Document de référence du contrat 3.0. Aucun module Rust ou Python ne lit ce fichier à l'exécution : il décrit ce que le code échange déjà. En cas d'écart, le code fait foi.",
+        "authoritative_sources": {
+            "request": "rust-engine/src/main.rs — objet input_data sérialisé sur stdin du processus Python",
+            "response": "python-brain/intelligence/engine.py — objet retourné par analyze(), écrit sur stdout",
+            "report_extensions": "rust-engine/src/main.rs — record_history() ajoute events, history, behavioral_changes et scope_changed au rapport affiché",
+            "versions": "rust-engine/src/version.rs et python-brain/version.py"
         },
-        "inventory": {
-            "hostname": "kali",
-            "kernel": "6.8.0-kali1-amd64",
-            "distribution": "Kali GNU/Linux Rolling",
-            "interfaces": [
-                {
-                    "name": "wlp2s0",
-                    "state": "up",
-                    "mac": "00:11:22:33:44:55",
-                    "addresses": ["192.168.1.13/24"]
-                }
-            ],
-            "listeners": [
-                {
-                    "address": "0.0.0.0",
-                    "port": 22,
-                    "family": "ipv4",
-                    "state": "listen",
-                    "pid": 1234,
-                    "uid": 0,
-                    "user": "root",
-                    "process": "sshd",
-                    "exe": "/usr/sbin/sshd",
-                    "unit": "ssh.service",
-                    "container": null,
-                    "confidence": "confirmed"
-                }
-            ]
-        },
-        "authorized_targets": ["127.0.0.1"],
-        "intelligence_config": {
-            "local_inventory": true,
-            "active_probing": false,
-            "banner_timeout_ms": 800,
-            "http_probe": false,
-            "tls_probe": false,
-            "ssh_policy_audit": true,
-            "journal_audit": false,
-            "journal_lines": 200,
-            "sshd_config_path": "/etc/ssh/sshd_config"
-        },
-        "tools_config": {
-            "enabled": false,
-            "nmap": true,
-            "testssl": true,
-            "trivy": false,
-            "trivy_targets": []
+        "sections": {
+            "contract": "Champs réellement produits et consommés, avec leurs types. C'est la partie normative.",
+            "examples": "Valeurs illustratives complètes, cohérentes avec contract mais non normatives : elles ne constituent pas un schéma exhaustif au sens d'un validateur."
         }
     },
-    "response_format": {
-        "engine": "NOUR SENTINEL",
-        "version": "0.5.0",
-        "source": "rust-network-engine",
-        "status": "analysis_completed",
-        "capabilities": [
-            "service_fingerprinting",
-            "vulnerability_intelligence",
-            "tls_audit",
-            "password_policy_audit",
-            "host_intrusion_detection",
-            "application_security_analysis"
-        ],
-        "network": {
-            "neighbors_discovered": 3,
-            "ports_observed": 5,
-            "open_ports": 2
+    "capability_status_values": {
+        "started": "Capacité lancée, sans preuve de résultat exploitable.",
+        "completed": "Collecte terminée avec une donnée produite ou des événements réellement analysés.",
+        "failed": "Erreur d'exécution de la capacité.",
+        "disabled": "Configuration excluant explicitement la capacité.",
+        "no_data": "Capacité autorisée mais aucune cible, aucun produit ou aucune entrée à analyser.",
+        "blocked_missing_permission": "Erreur d'exécution due à un privilège insuffisant (Permission denied, EACCES, etc.)."
+    },
+    "contract": {
+        "request": {
+            "required_keys": [
+                "source",
+                "devices",
+                "events",
+                "analysis_config",
+                "inventory",
+                "authorized_targets",
+                "intelligence_config",
+                "tools_config"
+            ],
+            "fields": {
+                "source": "string — constante \"rust-network-engine\"",
+                "devices": "array<NetworkDevice>",
+                "events": "array<Event>",
+                "analysis_config": "object — section analysis de settings.json",
+                "inventory": "HostContext",
+                "authorized_targets": "array<string> — cibles autorisées, dédupliquées et triées",
+                "intelligence_config": "object — section intelligence de settings.json, transmise telle quelle",
+                "tools_config": "object — section tools de settings.json, transmise telle quelle"
+            },
+            "objects": {
+                "NetworkDevice": {
+                    "ip": "string",
+                    "mac": "string",
+                    "interface": "string"
+                },
+                "Event": {
+                    "type": "string — \"port_observed\"",
+                    "ip": "string",
+                    "port": "number",
+                    "state": "string — \"open\" ou \"closed\""
+                },
+                "HostContext": {
+                    "hostname": "string|null",
+                    "kernel": "string|null",
+                    "distribution": "string|null",
+                    "os_id": "string|null",
+                    "os_version": "string|null",
+                    "architecture": "string|null",
+                    "interfaces": "array<Interface>",
+                    "listeners": "array<Listener>"
+                },
+                "Interface": {
+                    "name": "string",
+                    "state": "string",
+                    "mac": "string|null",
+                    "addresses": "array<string>"
+                },
+                "Listener": {
+                    "address": "string",
+                    "port": "number",
+                    "family": "string — ipv4 ou ipv6",
+                    "protocol": "string — tcp ou udp",
+                    "state": "string",
+                    "pid": "number|null",
+                    "uid": "number|null",
+                    "user": "string|null",
+                    "process": "string|null",
+                    "exe": "string|null",
+                    "unit": "string|null",
+                    "container": "string|null",
+                    "confidence": "string — confirmed, probable ou unknown"
+                },
+                "analysis_config": {
+                    "sensitive_ports": "array<number>",
+                    "known_services": "object<string, string> — numéro de port vers nom de service"
+                },
+                "intelligence_config": {
+                    "local_inventory": "boolean — lu par Rust uniquement (activation de l'inventaire local)",
+                    "active_probing": "boolean — lu par Python",
+                    "banner_timeout_ms": "number — lu par Python",
+                    "http_probe": "boolean — lu par Python",
+                    "tls_probe": "boolean — lu par Python",
+                    "ssh_policy_audit": "boolean — lu par Python",
+                    "journal_audit": "boolean — lu par Python",
+                    "journal_lines": "number — lu par Python",
+                    "sshd_config_path": "string — lu par Python",
+                    "login_defs_path": "string — lu par Python"
+                },
+                "tools_config": {
+                    "enabled": "boolean",
+                    "nmap": "boolean",
+                    "testssl": "boolean",
+                    "trivy": "boolean",
+                    "trivy_targets": "array<string>"
+                }
+            },
+            "notes": [
+                "intelligence_config et tools_config sont recopiés depuis settings.json : une clé supplémentaire y est transmise sans erreur, seules les clés ci-dessus sont lues.",
+                "Un Listener dont confidence vaut unknown reste un socket lié : il ne prouve pas la présence d'un service applicatif."
+            ]
         },
-        "findings": [
-            {
-                "finding_id": "f-0123456789ab",
-                "asset_id": "kali",
-                "ip": "0.0.0.0",
-                "port": 22,
-                "service": "ssh",
-                "component": "OpenSSH",
-                "check": "exposure.wildcard.22",
-                "observation": "Écoute sur l'interface générique (port 22), potentiellement joignable depuis plusieurs réseaux",
-                "evidence": "socket:0.0.0.0:22; pid=1234; process=sshd; unit=ssh.service",
-                "confidence": "confirmed",
-                "confidence_reason": "L'exposition réelle dépend du pare-feu, du NAT, du routage et des règles IPv6.",
-                "severity": "medium",
-                "severity_capped": false,
-                "exposure": "lan",
-                "references": [],
-                "recommendation": "Restreindre l'écoute à l'interface nécessaire et vérifier les règles de filtrage IPv4 et IPv6.",
-                "status": "open",
-                "first_seen": "2026-11-05T19:30:00+00:00",
-                "last_seen": "2026-11-05T19:30:00+00:00",
-                "cve": null,
-                "kev": false,
-                "epss": null,
-                "priority_score": 4.5,
-                "priority": "P2"
+        "response": {
+            "required_keys": [
+                "engine",
+                "version",
+                "core_version",
+                "lab_version",
+                "protocol_version",
+                "source",
+                "capabilities",
+                "capability_status",
+                "network",
+                "inventory",
+                "services",
+                "devices",
+                "findings_count",
+                "findings",
+                "risk_summary",
+                "tools_used",
+                "errors",
+                "status"
+            ],
+            "fields": {
+                "engine": "string — \"NOUR SENTINEL\"",
+                "version": "string — version du moteur (core)",
+                "core_version": "string",
+                "lab_version": "string",
+                "protocol_version": "string — \"3.0\"",
+                "source": "string — source reçue en entrée",
+                "capabilities": "array<string> — les six capacités déclarées",
+                "capability_status": "object<capacité, CapabilityStatus> — une entrée par capacité, sans omission",
+                "network": "NetworkSummary",
+                "inventory": "InventoryReport",
+                "services": "array<Service> — produits identifiés localement, dédupliqués",
+                "devices": "array<NetworkDevice> — repris tel quel depuis la requête",
+                "findings_count": "number — longueur de findings",
+                "findings": "array<Finding> — dédupliqués, triés par priority_score décroissant",
+                "risk_summary": "RiskSummary",
+                "tools_used": "array<string> — outils réellement exécutés",
+                "errors": "array<string> — erreurs explicites, jamais masquées",
+                "status": "string — \"analysis_completed\""
+            },
+            "notes": [
+                "metadata est optionnel : intelligence/models.py ne l'ajoute que si un collecteur fournit des détails. Son absence est normale et ne rend pas le constat incomplet.",
+                "priority_score et priority sont calculés après déduplication ; un constat brut n'en dispose pas encore."
+            ],
+            "objects": {
+                "CapabilityStatus": {
+                    "status": "string — une des six valeurs de capability_status_values",
+                    "reason": "string — justification lisible du statut"
+                },
+                "NetworkSummary": {
+                    "neighbors_discovered": "number",
+                    "ports_observed": "number",
+                    "open_ports": "number"
+                },
+                "InventoryReport": {
+                    "hostname": "string|null",
+                    "kernel": "string|null",
+                    "architecture": "string|null",
+                    "distribution": "string|null",
+                    "os_id": "string|null",
+                    "os_version": "string|null",
+                    "interfaces": "array<Interface>",
+                    "listeners_count": "number — longueur de listeners dans la requête",
+                    "listeners": "array<ListenerReport>"
+                },
+                "ListenerReport": {
+                    "address": "string",
+                    "port": "number",
+                    "family": "string",
+                    "protocol": "string — tcp ou udp",
+                    "state": "string — listen pour tcp, bound pour udp",
+                    "pid": "number|null",
+                    "uid": "number|null",
+                    "user": "string|null",
+                    "process": "string|null",
+                    "exe": "string|null",
+                    "unit": "string|null",
+                    "container": "string|null",
+                    "confidence": "string",
+                    "socket_bound": "boolean",
+                    "process_identified": "boolean",
+                    "application_identified": "boolean",
+                    "application_service": "string|null",
+                    "application_verified": "boolean — toujours false dans cette version"
+                },
+                "Service": {
+                    "service": "string",
+                    "product": "string",
+                    "version": "string|null",
+                    "confidence": "string",
+                    "evidence": "string",
+                    "source": "string — local, banner ou tool",
+                    "asset": "string",
+                    "ip": "string|null",
+                    "port": "number|null",
+                    "exposure": "string — local, lan, wan ou unknown"
+                },
+                "Finding": {
+                    "finding_id": "string",
+                    "asset_id": "string",
+                    "ip": "string|null",
+                    "port": "number|null",
+                    "service": "string|null",
+                    "component": "string",
+                    "check": "string",
+                    "observation": "string",
+                    "evidence": "string",
+                    "confidence": "string",
+                    "confidence_reason": "string",
+                    "severity": "string — info, low, medium, high ou critical",
+                    "severity_capped": "boolean",
+                    "exposure": "string",
+                    "references": "array<string>",
+                    "recommendation": "string",
+                    "status": "string — open ou to_verify",
+                    "first_seen": "string — date ISO 8601",
+                    "last_seen": "string — date ISO 8601",
+                    "cve": "string|null",
+                    "kev": "boolean",
+                    "epss": "number|null",
+                    "metadata": "object (optionnel) — détails propres au constat (unité, conteneur, origine, etc.) ; absent si aucun collecteur n'en fournit",
+                    "priority_score": "number",
+                    "priority": "string — P1, P2, P3 ou P4"
+                },
+                "RiskSummary": {
+                    "total": "number",
+                    "by_severity": "object — info, low, medium, high, critical",
+                    "by_priority": "object — P1, P2, P3, P4",
+                    "by_status": "object<statut, number> — répartition par statut de constat",
+                    "with_evidence": "number",
+                    "without_evidence": "number"
+                }
+            },
+            "report_extensions": {
+                "note": "Ajoutés par Rust dans le rapport final affiché ; absents de la réponse brute de Python.",
+                "fields": {
+                    "events": "array<Event> — événements envoyés au moteur",
+                    "history": "HistoryStatus",
+                    "behavioral_changes": "array<BehavioralChange>",
+                    "scope_changed": "boolean"
+                },
+                "objects": {
+                    "HistoryStatus": {
+                        "status": "string — recorded, not_recorded ou unavailable",
+                        "scan_id": "number — présent si status vaut recorded",
+                        "previous_scan_id": "number|null — présent si status vaut recorded",
+                        "scope_changed": "boolean — présent si status vaut recorded",
+                        "error": "string — présent si status ne vaut pas recorded"
+                    },
+                    "BehavioralChange": {
+                        "port": "number",
+                        "ip": "string",
+                        "change_type": "string — new, removed ou state_changed",
+                        "previous_state": "string|null",
+                        "current_state": "string|null"
+                    }
+                }
             }
-        ],
-        "risk_summary": {
-            "total": 1,
-            "by_severity": {
-                "info": 0,
-                "low": 0,
-                "medium": 1,
-                "high": 0,
-                "critical": 0
+        }
+    },
+    "examples": {
+        "request": {
+            "source": "rust-network-engine",
+            "devices": [
+                {
+                    "ip": "192.168.1.1",
+                    "mac": "aa:bb:cc:dd:ee:ff",
+                    "interface": "wlp2s0"
+                }
+            ],
+            "events": [
+                {
+                    "type": "port_observed",
+                    "ip": "127.0.0.1",
+                    "port": 22,
+                    "state": "open"
+                },
+                {
+                    "type": "port_observed",
+                    "ip": "127.0.0.1",
+                    "port": 80,
+                    "state": "closed"
+                }
+            ],
+            "analysis_config": {
+                "sensitive_ports": [23, 3389, 5900],
+                "known_services": {
+                    "22": "SSH",
+                    "53": "DNS",
+                    "80": "HTTP",
+                    "443": "HTTPS"
+                }
             },
-            "by_priority": {
-                "P1": 0,
-                "P2": 1,
-                "P3": 0,
-                "P4": 0
+            "inventory": {
+                "hostname": "kali",
+                "kernel": "6.8.0-kali1-amd64",
+                "distribution": "Kali GNU/Linux Rolling",
+                "os_id": "kali",
+                "os_version": "2026.1",
+                "architecture": "x86_64",
+                "interfaces": [
+                    {
+                        "name": "wlp2s0",
+                        "state": "up",
+                        "mac": "00:11:22:33:44:55",
+                        "addresses": ["192.168.1.13/24"]
+                    }
+                ],
+                "listeners": [
+                    {
+                        "address": "0.0.0.0",
+                        "port": 22,
+                        "family": "ipv4",
+                        "protocol": "tcp",
+                        "state": "listen",
+                        "pid": 1234,
+                        "uid": 0,
+                        "user": "root",
+                        "process": "sshd",
+                        "exe": "/usr/sbin/sshd",
+                        "unit": "ssh.service",
+                        "container": null,
+                        "confidence": "confirmed"
+                    }
+                ]
             },
-            "with_evidence": 1,
-            "without_evidence": 0
+            "authorized_targets": ["127.0.0.1"],
+            "intelligence_config": {
+                "local_inventory": true,
+                "active_probing": false,
+                "banner_timeout_ms": 800,
+                "http_probe": false,
+                "tls_probe": false,
+                "ssh_policy_audit": true,
+                "journal_audit": false,
+                "journal_lines": 200,
+                "sshd_config_path": "/etc/ssh/sshd_config",
+                "login_defs_path": "/etc/login.defs"
+            },
+            "tools_config": {
+                "enabled": false,
+                "nmap": true,
+                "testssl": true,
+                "trivy": false,
+                "trivy_targets": []
+            }
         },
-        "tools_used": [],
-        "errors": []
+        "response": {
+            "engine": "NOUR SENTINEL",
+            "version": "0.5.0",
+            "core_version": "0.5.0",
+            "lab_version": "0.6.0-beta.3",
+            "protocol_version": "3.0",
+            "source": "rust-network-engine",
+            "capabilities": [
+                "service_fingerprinting",
+                "vulnerability_intelligence",
+                "tls_audit",
+                "password_policy_audit",
+                "host_intrusion_detection",
+                "application_security_analysis"
+            ],
+            "capability_status": {
+                "service_fingerprinting": {
+                    "status": "completed",
+                    "reason": "1 socket(s) analysé(s) ; attribution locale"
+                },
+                "vulnerability_intelligence": {
+                    "status": "completed",
+                    "reason": "corrélation hors ligne des produits terminée"
+                },
+                "tls_audit": {
+                    "status": "disabled",
+                    "reason": "active_probing désactivé"
+                },
+                "password_policy_audit": {
+                    "status": "completed",
+                    "reason": "lecture des politiques terminée"
+                },
+                "host_intrusion_detection": {
+                    "status": "no_data",
+                    "reason": "journald lu ; aucune entrée exploitable"
+                },
+                "application_security_analysis": {
+                    "status": "disabled",
+                    "reason": "active_probing désactivé"
+                }
+            },
+            "network": {
+                "neighbors_discovered": 1,
+                "ports_observed": 2,
+                "open_ports": 1
+            },
+            "inventory": {
+                "hostname": "kali",
+                "kernel": "6.8.0-kali1-amd64",
+                "architecture": "x86_64",
+                "distribution": "Kali GNU/Linux Rolling",
+                "os_id": "kali",
+                "os_version": "2026.1",
+                "interfaces": [
+                    {
+                        "name": "wlp2s0",
+                        "state": "up",
+                        "mac": "00:11:22:33:44:55",
+                        "addresses": ["192.168.1.13/24"]
+                    }
+                ],
+                "listeners_count": 2,
+                "listeners": [
+                    {
+                        "address": "0.0.0.0",
+                        "port": 22,
+                        "family": "ipv4",
+                        "protocol": "tcp",
+                        "state": "listen",
+                        "pid": 1234,
+                        "uid": 0,
+                        "user": "root",
+                        "process": "sshd",
+                        "exe": "/usr/sbin/sshd",
+                        "unit": "ssh.service",
+                        "container": null,
+                        "confidence": "confirmed",
+                        "socket_bound": true,
+                        "process_identified": true,
+                        "application_identified": true,
+                        "application_service": "OpenSSH",
+                        "application_verified": false
+                    },
+                    {
+                        "address": "127.0.0.1",
+                        "port": 5353,
+                        "family": "ipv4",
+                        "protocol": "udp",
+                        "state": "bound",
+                        "pid": null,
+                        "uid": null,
+                        "user": null,
+                        "process": null,
+                        "exe": null,
+                        "unit": null,
+                        "container": null,
+                        "confidence": "unknown",
+                        "socket_bound": true,
+                        "process_identified": false,
+                        "application_identified": false,
+                        "application_service": null,
+                        "application_verified": false
+                    }
+                ]
+            },
+            "services": [
+                {
+                    "service": "ssh",
+                    "product": "OpenSSH",
+                    "version": null,
+                    "confidence": "confirmed",
+                    "evidence": "local_process:/usr/sbin/sshd",
+                    "source": "local",
+                    "asset": "kali",
+                    "ip": "0.0.0.0",
+                    "port": 22,
+                    "exposure": "lan"
+                }
+            ],
+            "devices": [
+                {
+                    "ip": "192.168.1.1",
+                    "mac": "aa:bb:cc:dd:ee:ff",
+                    "interface": "wlp2s0"
+                }
+            ],
+            "findings_count": 1,
+            "findings": [
+                {
+                    "finding_id": "f-0123456789ab",
+                    "asset_id": "kali",
+                    "ip": "0.0.0.0",
+                    "port": 22,
+                    "service": "ssh",
+                    "component": "OpenSSH",
+                    "check": "exposure.wildcard.22",
+                    "observation": "Écoute sur l'interface générique (port 22), potentiellement joignable depuis plusieurs réseaux",
+                    "evidence": "socket:0.0.0.0:22; pid=1234; process=sshd; unit=ssh.service",
+                    "confidence": "confirmed",
+                    "confidence_reason": "L'exposition réelle dépend du pare-feu, du NAT, du routage et des règles IPv6.",
+                    "severity": "medium",
+                    "severity_capped": false,
+                    "exposure": "lan",
+                    "references": [],
+                    "recommendation": "Restreindre l'écoute à l'interface nécessaire et vérifier les règles de filtrage IPv4 et IPv6.",
+                    "status": "open",
+                    "first_seen": "2026-11-05T19:30:00+00:00",
+                    "last_seen": "2026-11-05T19:30:00+00:00",
+                    "cve": null,
+                    "kev": false,
+                    "epss": null,
+                    "metadata": {
+                        "unit": "ssh.service",
+                        "container": null
+                    },
+                    "priority_score": 4.5,
+                    "priority": "P2"
+                }
+            ],
+            "risk_summary": {
+                "total": 1,
+                "by_severity": {
+                    "info": 0,
+                    "low": 0,
+                    "medium": 1,
+                    "high": 0,
+                    "critical": 0
+                },
+                "by_priority": {
+                    "P1": 0,
+                    "P2": 1,
+                    "P3": 0,
+                    "P4": 0
+                },
+                "by_status": {
+                    "open": 1
+                },
+                "with_evidence": 1,
+                "without_evidence": 0
+            },
+            "tools_used": [],
+            "errors": [],
+            "status": "analysis_completed",
+            "events": [
+                {
+                    "type": "port_observed",
+                    "ip": "127.0.0.1",
+                    "port": 22,
+                    "state": "open"
+                },
+                {
+                    "type": "port_observed",
+                    "ip": "127.0.0.1",
+                    "port": 80,
+                    "state": "closed"
+                }
+            ],
+            "history": {
+                "status": "recorded",
+                "scan_id": 12,
+                "previous_scan_id": 11,
+                "scope_changed": false
+            },
+            "behavioral_changes": [
+                {
+                    "port": 80,
+                    "ip": "127.0.0.1",
+                    "change_type": "state_changed",
+                    "previous_state": "open",
+                    "current_state": "closed"
+                }
+            ],
+            "scope_changed": false
+        }
     }
 }

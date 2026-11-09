@@ -9,6 +9,7 @@ import re
 import ssl
 
 from intelligence.models import make_finding
+from security_intelligence import collection_trace
 
 SECURITY_HEADERS = (
     (
@@ -254,6 +255,7 @@ def analyze_response(response, asset="localhost", ip=None, port=None, exposure="
     return findings
 
 
+@collection_trace.instrument("tcp", "http_analyzer.probe_http")
 def probe_http(ip, port, timeout=1.0, path="/", use_tls=None):
     """Requête HEAD unique. À n'appeler que sur une cible autorisée."""
 

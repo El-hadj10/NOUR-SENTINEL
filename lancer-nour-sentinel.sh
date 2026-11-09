@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# NOUR SENTINEL LAB 0.6.0-beta.2 — lanceur authentifié, sans session.
+# NOUR SENTINEL LAB 0.6.0-beta.3 — lanceur authentifié, sans session.
 # Aucun secret n'est stocké dans ce fichier ni dans settings.json.
 set -Eeuo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-VERSION="0.6.0-beta.2"
+VERSION="0.6.0-beta.3"
+CORE_VERSION="0.5.0"
+PROTOCOL_VERSION="3.0"
 VENV="$ROOT/.venv"
 PYTHON="$VENV/bin/python"
 REQUIREMENTS="$ROOT/python-brain/requirements.txt"
@@ -16,7 +18,7 @@ export PYTHONPATH="$ROOT/python-brain${PYTHONPATH:+:$PYTHONPATH}"
 
 usage() {
     cat <<'EOF'
-NOUR SENTINEL LAB 0.6.0-beta.2
+NOUR SENTINEL LAB 0.6.0-beta.3
 
 Utilisation :
   ./lancer-nour-sentinel.sh                  Authentification puis moteur Rust
@@ -25,6 +27,8 @@ Utilisation :
   ./lancer-nour-sentinel.sh --change-auth    Changer le secret (ancien vérifié)
   ./lancer-nour-sentinel.sh --intel inventory
   ./lancer-nour-sentinel.sh --intel full-local
+  ./lancer-nour-sentinel.sh --intel discover
+  ./lancer-nour-sentinel.sh --intel scan --target 192.168.1.1 --protocol both --confirm-authorized
   ./lancer-nour-sentinel.sh --intel tls --target 127.0.0.1 --port 8443
   ./lancer-nour-sentinel.sh --intel fingerprint --target 127.0.0.1 --port 22 --protocol ssh
   ./lancer-nour-sentinel.sh --intel cve --online
@@ -68,7 +72,7 @@ case "${1:-}" in
         usage
         ;;
     --version|-V)
-        echo "NOUR SENTINEL LAB $VERSION"
+        echo "NOUR SENTINEL LAB $VERSION (moteur $CORE_VERSION, protocole $PROTOCOL_VERSION)"
         ;;
     --setup-deps)
         setup_deps

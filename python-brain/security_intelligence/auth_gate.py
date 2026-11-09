@@ -24,11 +24,18 @@ import tempfile
 import time
 from pathlib import Path
 
+try:
+    import authz
+except ModuleNotFoundError:  # exécution directe du script, sans PYTHONPATH
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    import authz
+
 MIN_SECRET_LENGTH = 16
 MAX_ATTEMPTS = 3
 LOCKOUT_BASE_SECONDS = 30
 LOCKOUT_MAX_SECONDS = 900
 ATTEMPTS_VERSION = 1
+MAX_ATTEMPTS_BYTES = 4096
 
 DEFAULT_AUTH_FILE = Path.home() / ".config" / "nour-sentinel" / "auth.phc"
 ATTEMPTS_FILENAME = "auth.attempts.json"
@@ -129,7 +136,7 @@ def _write_private(path, content):
         raise AuthError(f"écriture du secret impossible: {path}")
 
 
-def _read_private(path, label="secret", missing_ok=False):
+def _read_private(path, label="secret", missing_ok=False, max_bytes=None):
     """Lit un fichier sensible via un descripteur O_NOFOLLOW et fstat."""
 
     path = Path(path)
@@ -165,12 +172,18 @@ def _read_private(path, label="secret", missing_ok=False):
             )
 
         chunks = []
+        total = 0
 
         while True:
             chunk = os.read(descriptor, 65536)
 
             if not chunk:
                 break
+
+            total += len(chunk)
+
+            if max_bytes is not None and total > max_bytes:
+                raise AuthError(f"{label} trop volumineux: {path}")
 
             chunks.append(chunk)
 
@@ -267,7 +280,12 @@ def _empty_attempts():
 
 
 def _read_attempts(path=None):
-    text = _read_private(attempts_path(path), "état de limitation", missing_ok=True)
+    text = _read_private(
+        attempts_path(path),
+        "état de limitation",
+        missing_ok=True,
+        max_bytes=MAX_ATTEMPTS_BYTES,
+    )
 
     if text is None:
         return _empty_attempts()
@@ -292,6 +310,10 @@ def _read_attempts(path=None):
         or not isinstance(locked_until, int)
         or locked_until < 0
     ):
+        raise AuthError("état de limitation invalide")
+
+    # Un état altéré ne doit pas pouvoir verrouiller le compte indéfiniment.
+    if locked_until > int(time.time()) + LOCKOUT_MAX_SECONDS:
         raise AuthError("état de limitation invalide")
 
     return {
@@ -363,11 +385,39 @@ def _verify_unlocked(secret, path=None):
     return True
 
 
-def verify(secret, path=None):
-    """Vérifie un secret sous verrou, sans modifier le compteur d'échecs."""
+def verify(secret, path=None, now_fn=time.time):
+    """Vérifie un secret en respectant la limitation des tentatives.
 
-    with _auth_lock(path):
-        return _verify_unlocked(secret, path)
+    Un échec est enregistré dans le même compteur persistant que
+    ``authenticate`` ; au seuil, le compte est verrouillé. Aucun chemin public
+    ne permet donc d'essayer des secrets à un rythme illimité. Un succès
+    remet le compteur à zéro, comme l'authentification opérationnelle.
+    """
+
+    target = auth_path(path)
+
+    with _auth_lock(target):
+        moment = int(now_fn())
+        state = _read_attempts(target)
+        remaining = _lockout_remaining(state, moment)
+
+        if remaining:
+            raise AuthError(
+                f"authentification verrouillée; réessayez dans {remaining} s"
+            )
+
+        if _verify_unlocked(secret, target):
+            _write_attempts(target, _empty_attempts())
+            return True
+
+        delay = _record_failure(target, state, moment)
+
+    if delay:
+        raise AuthError(
+            f"authentification refusée; compte verrouillé pendant {delay} s"
+        )
+
+    return False
 
 
 def setup(secret, path=None, force=False, minimum=MIN_SECRET_LENGTH):
@@ -444,6 +494,7 @@ def authenticate(
     """
 
     target = auth_path(path)
+    authz.reset()
     _read_private(target)
 
     stream = input_stream or sys.stdin
@@ -485,6 +536,7 @@ def authenticate(
 
             if _verify_unlocked(candidate, target):
                 _write_attempts(target, _empty_attempts())
+                authz._grant()
                 return True
 
             delay = _record_failure(target, state, moment)
@@ -519,7 +571,7 @@ def main(argv=None):
         prog="auth_gate",
         description="Authentification propriétaire NOUR SENTINEL (Argon2id).",
     )
-    parser.add_argument("--version", action="version", version="0.6.0-beta.2")
+    parser.add_argument("--version", action="version", version="0.6.0-beta.3")
 
     commands = parser.add_subparsers(dest="command", required=True)
 

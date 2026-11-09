@@ -1,4 +1,4 @@
-"""Orchestration du laboratoire 0.6.0-beta.2.
+"""Orchestration du laboratoire 0.6.0-beta.3.
 
 Chaque exécution produit un rapport normalisé, l'écrit en 0600 sous
 `data/reports/` et l'enregistre dans la base d'intelligence.
@@ -7,8 +7,19 @@ Chaque exécution produit un rapport normalisé, l'écrit en 0600 sous
 import socket
 from datetime import datetime, timezone
 
+import authz
+
 from security_intelligence import BASE_VERSION, LAB_NAME, VERSION
-from security_intelligence import reports, risk_engine
+from security_intelligence import (
+    CORE_VERSION,
+    LAB_VERSION,
+    PROTOCOL_VERSION,
+    collection_trace,
+    profiles,
+    reports,
+    risk_engine,
+)
+from intelligence.fingerprinting import services as fingerprinting_services
 from security_intelligence.config import resolve_target
 from security_intelligence.applications import docker as docker_inventory
 from security_intelligence.fingerprinting import inventory, service_probe
@@ -41,7 +52,11 @@ def public_inventory(data):
         "packages": data.get("packages") or [],
         "products": data.get("products") or [],
         "services": data.get("services") or [],
-        "listeners": data.get("listeners") or [],
+        "listeners": [
+            fingerprinting_services.describe_listener(item)
+            for item in data.get("listeners") or []
+            if fingerprinting_services.describe_listener(item) is not None
+        ],
     }
 
 
@@ -79,9 +94,11 @@ def _persist(report, config, errors):
     return report
 
 
+@collection_trace.instrument("operation", "lab.finalize")
 def finalize(mode, config, findings, errors, inventory_data=None, metadata=None):
     """Dédoublonne, priorise, écrit le rapport et mémorise l'exécution."""
 
+    authz.require()
     unique = risk_engine.deduplicate(findings)
     ordered = risk_engine.prioritize(unique)
 
@@ -89,6 +106,9 @@ def finalize(mode, config, findings, errors, inventory_data=None, metadata=None)
         "engine": LAB_NAME,
         "version": VERSION,
         "base_version": BASE_VERSION,
+        "core_version": CORE_VERSION,
+        "lab_version": LAB_VERSION,
+        "protocol_version": PROTOCOL_VERSION,
         "mode": mode,
         "environment": config.get("environment", "lab"),
         "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
@@ -113,7 +133,9 @@ def finalize(mode, config, findings, errors, inventory_data=None, metadata=None)
     return report
 
 
+@collection_trace.instrument("operation", "lab.run_inventory")
 def run_inventory(config):
+    authz.require()
     data = inventory.collect(config)
     errors = list(data.get("errors") or [])
 
@@ -127,7 +149,9 @@ def run_inventory(config):
     )
 
 
+@collection_trace.instrument("operation", "lab.run_full_local")
 def run_full_local(config):
+    authz.require()
     data = inventory.collect(config)
     errors = list(data.get("errors") or [])
 
@@ -166,7 +190,11 @@ def run_full_local(config):
     )
 
 
-def run_fingerprint(config, target, port, protocol="http"):
+@collection_trace.instrument("operation", "lab.run_fingerprint")
+def run_fingerprint(config, target, port, protocol="http", profile=profiles.DEFAULT_PROFILE):
+    authz.require()
+    selection = profiles.resolve_profile(profile)
+    timeout = profiles.probe_timeout(config.get("timeout", 2.0), selection)
     # Refus immédiat hors liste blanche : aucune sonde n'est tentée.
     resolve_target(target, config.get("authorized_targets") or ())
 
@@ -174,14 +202,14 @@ def run_fingerprint(config, target, port, protocol="http"):
         findings, errors = service_probe.probe_ssh(
             target,
             port,
-            timeout=config.get("timeout", 2.0),
+            timeout=timeout,
             allowed=config.get("authorized_targets") or (),
         )
     elif protocol == "http":
         findings, errors = service_probe.probe_http(
             target,
             port,
-            timeout=config.get("timeout", 2.0),
+            timeout=timeout,
             allowed=config.get("authorized_targets") or (),
         )
     else:
@@ -192,20 +220,29 @@ def run_fingerprint(config, target, port, protocol="http"):
         config,
         findings,
         errors,
-        metadata={"target": target, "port": port, "protocol": protocol},
+        metadata={
+            "target": target,
+            "port": port,
+            "protocol": protocol,
+            "profile": selection["name"],
+        },
     )
 
 
-def run_tls(config, target, port):
+@collection_trace.instrument("operation", "lab.run_tls")
+def run_tls(config, target, port, profile=profiles.DEFAULT_PROFILE):
+    authz.require()
     if not config.get("probes", {}).get("tls", True):
         raise PermissionError("sonde TLS désactivée dans la configuration")
 
+    selection = profiles.resolve_profile(profile)
+    timeout = profiles.probe_timeout(config.get("timeout", 3.0), selection)
     resolve_target(target, config.get("authorized_targets") or ())
 
     findings, metadata, errors = tls_analyzer.audit(
         target,
         port,
-        timeout=config.get("timeout", 3.0),
+        timeout=timeout,
         allowed=config.get("authorized_targets") or (),
     )
 
@@ -214,11 +251,13 @@ def run_tls(config, target, port):
         config,
         findings,
         errors,
-        metadata={"tls": metadata},
+        metadata={"tls": metadata, "profile": selection["name"]},
     )
 
 
+@collection_trace.instrument("operation", "lab.run_cve_online")
 def run_cve_online(config, package=None, version=None):
+    authz.require()
     if not config.get("online", {}).get("enabled"):
         raise PermissionError(
             "intelligence externe désactivée dans config/security_intelligence.json"

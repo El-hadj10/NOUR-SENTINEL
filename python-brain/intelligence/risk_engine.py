@@ -79,15 +79,29 @@ def deduplicate(findings):
             merged[key] = finding
             continue
 
+        # Un même constat présent deux fois (objet ou contenu identique) ne
+        # doit jamais être enregistré comme son propre doublon.
+        if finding is current or finding == current:
+            continue
+
         if _rank(finding) > _rank(current):
             merged[key] = finding
             merged[key].setdefault("metadata", {})["superseded"] = current.get(
                 "finding_id"
             )
         else:
-            current.setdefault("metadata", {}).setdefault("duplicates", []).append(
-                finding.get("finding_id")
+            duplicates = current.setdefault("metadata", {}).setdefault(
+                "duplicates", []
             )
+            identifier = finding.get("finding_id")
+            current_identifier = current.get("finding_id")
+
+            if (
+                identifier
+                and identifier != current_identifier
+                and identifier not in duplicates
+            ):
+                duplicates.append(identifier)
 
     return list(merged.values())
 

@@ -177,7 +177,15 @@ def audit_login_defs(text, asset="localhost", exposure="lan"):
     values = parse_login_defs(text)
     findings = []
 
-    def add(check, observation, evidence, severity, recommendation):
+    def add(
+        check,
+        observation,
+        evidence,
+        severity,
+        recommendation,
+        confidence="confirmed",
+        status="open",
+    ):
         findings.append(
             make_finding(
                 asset=asset,
@@ -185,12 +193,13 @@ def audit_login_defs(text, asset="localhost", exposure="lan"):
                 component="PAM/login.defs",
                 observation=observation,
                 evidence=evidence,
-                confidence="confirmed",
+                confidence=confidence,
                 severity=severity,
                 exposure=exposure,
                 recommendation=recommendation,
+                status=status,
                 references=[
-                    "https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html"
+                    "https://pages.nist.gov/800-63-4/sp800-63b.html"
                 ],
             )
         )
@@ -201,15 +210,45 @@ def audit_login_defs(text, asset="localhost", exposure="lan"):
         except (TypeError, ValueError):
             return None
 
+    raw_max_days = values.get("PASS_MAX_DAYS")
     max_days = integer("PASS_MAX_DAYS")
 
-    if max_days is not None and (max_days > 365 or max_days == 99999):
+    # Révision PASS_MAX_DAYS : une valeur très élevée (99999) signifie
+    # « pas d'expiration forcée ». NIST SP 800-63B (§5.1.1.2) déconseille la
+    # rotation arbitraire et privilégie la longueur, le blocage après échecs
+    # et la détection de compromission. Le seuil de 90 jours est CONTEXTUEL :
+    # il reprend la limite de PCI DSS v4.0 (exigence 8.3.9) pour les comptes
+    # soumis à cette norme, pas une vérité universelle. Il sert de signal de
+    # revue, jamais de verdict de conformité.
+    if raw_max_days is not None and max_days is None:
         add(
             "password_expiration",
-            f"Expiration des mots de passe trop lointaine ({max_days} jours)",
+            f"PASS_MAX_DAYS illisible ({raw_max_days[:40]})",
+            f"login.defs:PASS_MAX_DAYS {raw_max_days[:40]}",
+            "low",
+            "Corriger PASS_MAX_DAYS avec une valeur entière ou 99999.",
+            confidence="low",
+            status="to_verify",
+        )
+    elif max_days is not None and max_days <= 0:
+        add(
+            "password_expiration",
+            f"PASS_MAX_DAYS invalide ({max_days})",
             f"login.defs:PASS_MAX_DAYS {max_days}",
-            "medium",
-            "Réduire PASS_MAX_DAYS à 365 jours ou moins.",
+            "low",
+            "Utiliser 99999 (pas d'expiration forcée) ou une valeur positive.",
+            confidence="low",
+            status="to_verify",
+        )
+    elif max_days is not None and max_days < 90:
+        add(
+            "password_rotation",
+            f"Rotation forcée des mots de passe tous les {max_days} jours",
+            f"login.defs:PASS_MAX_DAYS {max_days}",
+            "low",
+            "Ne pas imposer de rotation arbitraire ; privilégier la longueur, "
+            "le blocage après échecs et la détection de compromission "
+            "(NIST SP 800-63B).",
         )
 
     min_length = integer("PASS_MIN_LEN")

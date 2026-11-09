@@ -12,6 +12,10 @@ combinant Rust, Python et SQLite.
 - **SQLite** : mémoire des scans et de leurs observations.
 - **JSON** : contrat versionné entre les deux moteurs (`protocol.json` 3.0).
 
+Les rapports exposent trois versions distinctes, additives aux champs
+historiques `version`/`base_version` : `core_version` (moteur 0.5.0),
+`lab_version` (0.6.0-beta.3) et `protocol_version` (3.0).
+
 ## Versions
 
 **Ligne stable de référence : 0.5.0 — Security Intelligence**
@@ -19,7 +23,7 @@ combinant Rust, Python et SQLite.
 Statut : les six capacités sont implémentées, testées hors ligne et
 documentées dans [`docs/SECURITY_INTELLIGENCE.md`](docs/SECURITY_INTELLIGENCE.md).
 
-**Laboratoire : 0.6.0-beta.2 — Security Intelligence Lab**
+**Laboratoire : 0.6.0-beta.3 — Security Intelligence Lab**
 
 Couche additive au-dessus de la v0.5.0 : authentification propriétaire
 Argon2id directe (sans session), CLI `--intel`, liste blanche locale,
@@ -40,6 +44,8 @@ Provenance :
   collecteurs locaux et connecteurs externes explicites.
 - 0.6.0-beta.2 : suppression de la session forgeable, Argon2id direct à
   chaque lancement, verrou `flock`, compteur persistant et E2E PTY.
+- 0.6.0-beta.3 : entrées Python directes fermées, jeton mémoire non
+  persistant et Auth Gate Python avant toute collecte Rust.
 
 ## Les six capacités
 
@@ -57,7 +63,7 @@ Chaque constat porte `finding_id`, `evidence`, `confidence`,
 `recommendation`. Une sévérité haute ou critique sans preuve est plafonnée à
 `medium` et signalée (`severity_capped`).
 
-## Laboratoire 0.6.0-beta.2
+## Laboratoire 0.6.0-beta.3
 
 ```bash
 ./lancer-nour-sentinel.sh --setup-deps   # venv + argon2-cffi
@@ -66,15 +72,31 @@ Chaque constat porte `finding_id`, `evidence`, `confidence`,
 
 ./lancer-nour-sentinel.sh --intel inventory
 ./lancer-nour-sentinel.sh --intel full-local
-./lancer-nour-sentinel.sh --intel tls --target 127.0.0.1 --port 8443
+./lancer-nour-sentinel.sh --intel discover
+./lancer-nour-sentinel.sh --intel scan --target 192.168.1.1 --protocol both --confirm-authorized
+GATEWAY="$(ip -4 route show default | awk '$1 == "default" && $2 == "via" {print $3}')"
+./lancer-nour-sentinel.sh --intel tls --target "$GATEWAY" --port 8443
 ./lancer-nour-sentinel.sh --intel cve --online
 ```
 
-- Le contrôle d'accès Rust exige un terminal et s'exécute **avant** la
-  configuration, l'ARP et le TCP ; le CLI vérifie Argon2id avant chaque
-  commande opérationnelle. Aucune session n'est créée ni acceptée.
-- Les sondes actives sont limitées à `127.0.0.1` et `localhost`
-  (`config/security_intelligence.json`). `full-local` ne lance aucun réseau.
+- Rust démarre le cerveau Python avant toute configuration ; `main.py`
+  exécute Argon2id sous terminal et n'émet `AUTH_OK` qu'après succès. Le CLI
+  vérifie Argon2id avant chaque commande. Aucune session n'est créée.
+- `intelligence.engine.analyze()` et les fonctions `lab.run_*` exigent une
+  autorisation mémoire délivrée par l'Auth Gate ; un import direct ne collecte
+  rien.
+- La cible réseau par défaut est `default_gateway` : l'adresse IPv4 de la
+  passerelle est résolue à l'exécution, sans être stockée dans les fichiers.
+  Une route privée unique est exigée pour TLS/fingerprint. `discover` lit la
+  table ARP locale sans envoyer de paquets ; `scan` sonde une seule IPv4
+  RFC1918 choisie dans cette liste, après confirmation
+  `--confirm-authorized`. Les listes TCP et UDP sont limitées à 32 ports
+  chacune et les résultats ne sont pas enregistrés dans les rapports ou la
+  base.
+- Les sondes du laboratoire restent limitées à la cible exacte autorisée dans
+  `config/security_intelligence.json`. Pour `--intel tls` ou `fingerprint`,
+  indique l'IP de la box affichée par `ip -4 route show default`.
+  `full-local` ne lance aucun réseau.
 - Rapports JSON en 0600 sous `data/reports/`, base
   `data/history/nour_sentinel_intel.db`, dossiers en 0700.
 - OSV/NVD/KEV/EPSS ne sont jamais appelés implicitement : `--online` est
@@ -133,11 +155,16 @@ L'analyzer v0.5.0 n'a aucune dépendance Python. Le laboratoire installe
 
 `config/settings.json` :
 
+L'interpréteur Python n'est plus configurable : le binaire utilise
+systématiquement `.venv/bin/python`, validé avant le handshake. Le champ
+obsolète `engines.python.executable` a été supprimé.
+
 | Section | Paramètre | Rôle |
 |---|---|---|
 | `application` | `version` | Version affichée et reportée |
-| `engines.python` | `executable` | Interpréteur Python |
-| `network` | `targets` | Adresses IP explicitement autorisées |
+| `engines.python` | `enabled` | Active le cerveau Python |
+| `network` | `targets` | `default_gateway` (passerelle IPv4 RFC1918 unique) ou IP explicitement autorisées |
+| `network` | `discover_arp` | Découverte passive des voisins (désactivée par défaut) |
 | `network` | `ports` | Ports TCP vérifiés (périmètre) |
 | `network` | `timeout_ms` | Délai de connexion par port |
 | `network` | `max_concurrency` | Workers (plafond 256) |
@@ -163,7 +190,10 @@ cargo run --manifest-path rust-engine/Cargo.toml
 
 Le rapport JSON final contient :
 
-- `capabilities` : les six piliers exécutés ;
+- `capabilities` : les six piliers déclarés ; `capability_status` : statut réel
+  (`started`, `completed`, `failed`, `disabled`, `no_data`,
+  `blocked_missing_permission`) avec sa raison. Un démarrage n'est jamais
+  présenté comme un succès ;
 - `inventory` : hôte, interfaces et sockets attribués (`pid`, `process`,
   `unit`, `container`, `confidence`) ;
 - `services` : produits identifiés localement ;
@@ -201,16 +231,16 @@ La base se trouve par défaut dans `data/history/nour_sentinel.db`.
 ## Tests
 
 ```bash
-cargo test --manifest-path rust-engine/Cargo.toml   # 45 tests unitaires Rust
-.venv/bin/python -m unittest discover -s tests/python # 150 tests Python (lab complet)
-.venv/bin/python -m unittest discover -s tests/integration # 9 tests d'intégration
+cargo test --manifest-path rust-engine/Cargo.toml   # 52 tests unitaires Rust
+.venv/bin/python -m unittest discover -s tests/python # 231 tests Python (lab complet)
+.venv/bin/python -m unittest discover -s tests/integration # 11 tests d'intégration
 ```
 
 Les tests n'ouvrent aucune connexion externe : fixtures pour `nmap`,
 `testssl.sh`, `trivy`, journald, Docker, OSV/NVD/KEV/EPSS ; serveurs locaux
 éphémères pour SSH, HTTP et TLS ; historique, rapports et configuration
-temporaires. Sans `argon2-cffi`, 15 tests d'authentification sont ignorés
-(`150 tests exécutés, 15 ignorés`).
+temporaires. Le venv complet exécute les 231 tests ; sans `argon2-cffi`, les
+30 tests d'authentification sont ignorés.
 
 ## Sécurité
 
@@ -219,6 +249,9 @@ disposez d'une autorisation explicite.
 
 - La découverte ARP est strictement passive (`/proc/net/arp`).
 - La vérification TCP est active, uniquement vers les cibles déclarées.
+- Trois profils (`passif`, `standard`, `agressif`) règlent ports, timeout et
+  concurrence des sondes ; ils ne lèvent ni la confirmation, ni la sélection
+  ARP, ni la liste blanche, ni le plafond de 32 ports par protocole.
 - Les vérifications actives d'intelligence et les outils externes sont
   désactivés par défaut et limités au périmètre autorisé.
 - Aucune session locale réutilisable : chaque lancement vérifie Argon2id.
@@ -238,7 +271,9 @@ disposez d'une autorisation explicite.
 - L'analyse de certificat dépend d'un certificat décodé ou de `testssl.sh`.
 - Les alertes issues des journaux sont des signaux à investiguer, pas des
   preuves de compromission.
-- La découverte ARP n'est pas encore reliée au scan TCP.
+- Le scanner TCP Rust ne parcourt pas automatiquement les voisins ARP. Le
+  laboratoire Python propose désormais `--intel discover`, puis `--intel scan`
+  pour sonder une seule IP sélectionnée, avec confirmation explicite.
 - Le laboratoire exige des privilèges pour le processus d'un socket d'un autre
   utilisateur et pour un `sshd -T` complet ; les erreurs sont conservées, pas
   masquées.

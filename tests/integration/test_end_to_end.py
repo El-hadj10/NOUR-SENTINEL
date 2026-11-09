@@ -51,7 +51,7 @@ class TestEndToEnd(unittest.TestCase):
         if not BINARY.exists():
             raise RuntimeError("Exécutable Rust introuvable.")
 
-    def build_config(self, ports, known_services=None):
+    def build_config(self, ports, known_services=None, discover_arp=False):
         """Configuration isolée, de périmètre identique d'un scan à l'autre."""
 
         return {
@@ -65,13 +65,12 @@ class TestEndToEnd(unittest.TestCase):
                     "enabled": True
                 },
                 "python": {
-                    "enabled": True,
-                    "executable": sys.executable
+                    "enabled": True
                 }
             },
             "network": {
                 "targets": ["127.0.0.1"],
-                "discover_arp": False,
+                "discover_arp": discover_arp,
                 "scan_discovered_devices": False,
                 "ports": ports,
                 "timeout_ms": 1000,
@@ -87,11 +86,11 @@ class TestEndToEnd(unittest.TestCase):
             }
         }
 
-    def write_config(self, temp_dir, ports, known_services=None):
+    def write_config(self, temp_dir, ports, known_services=None, discover_arp=False):
         config_path = Path(temp_dir) / "settings.json"
 
         config_path.write_text(
-            json.dumps(self.build_config(ports, known_services)),
+            json.dumps(self.build_config(ports, known_services, discover_arp)),
             encoding="utf-8"
         )
 
@@ -245,6 +244,9 @@ class TestEndToEnd(unittest.TestCase):
 
                 self.assertEqual(report["engine"], "NOUR SENTINEL")
                 self.assertEqual(report["version"], "0.5.0")
+                self.assertEqual(report["core_version"], "0.5.0")
+                self.assertEqual(report["lab_version"], "0.6.0-beta.3")
+                self.assertEqual(report["protocol_version"], "3.0")
                 self.assertEqual(report["status"], "analysis_completed")
                 self.assertEqual(report["network"]["ports_observed"], 1)
                 self.assertEqual(report["network"]["open_ports"], 1)
@@ -268,9 +270,12 @@ class TestEndToEnd(unittest.TestCase):
                 )
 
                 self.assertIn(
-                    "[SUCCESS] NOUR SENTINEL v0.5.0 operational.",
+                    "core v0.5.0 / lab v0.6.0-beta.3 operational.",
                     process.stdout
                 )
+                self.assertIn("moteur (core)  : v0.5.0", process.stdout)
+                self.assertIn("laboratoire    : v0.6.0-beta.3", process.stdout)
+                self.assertIn("protocole JSON : v3.0", process.stdout)
 
                 self.assertEqual(report["history"]["status"], "recorded")
                 self.assertTrue(
@@ -395,6 +400,66 @@ class TestEndToEnd(unittest.TestCase):
 
             self.assertEqual(state["failures"], 3)
             self.assertGreater(state["locked_until"], int(time.time()))
+    def test_pre_auth_never_starts_arp_tcp_report_or_sqlite(self):
+        """Preuve P0.3 : le refus précède ARP, TCP, rapport et historique."""
+
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind(("127.0.0.1", 0))
+        server.listen(4)
+        test_port = server.getsockname()[1]
+
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                config_path = self.write_config(
+                    temp_dir,
+                    [test_port],
+                    discover_arp=True,
+                )
+                history_dir = Path(temp_dir) / "history"
+                reports_dir = Path(temp_dir) / "reports"
+                home = self.prepare_auth(temp_dir)
+
+                process = self.run_engine_pty(
+                    config_path,
+                    history_dir,
+                    home,
+                    [
+                        "mauvais secret 1",
+                        "mauvais secret 2",
+                        "mauvais secret 3",
+                    ],
+                )
+
+                self.assertNotEqual(process.returncode, 0)
+
+                for marker in (
+                    "AUTH_OK",
+                    "[RUST] Configuration validated.",
+                    "[RUST] Passive ARP discovery",
+                    "[RUST] Concurrent TCP verification",
+                    "[RUST] Security report:",
+                ):
+                    self.assertNotIn(marker, process.stdout)
+
+                self.assertFalse(history_dir.exists())
+                self.assertFalse(reports_dir.exists())
+
+                # Aucune connexion TCP n'a été tentée vers le port configuré.
+                server.setblocking(False)
+
+                with self.assertRaises(BlockingIOError):
+                    server.accept()
+
+                attempts = (
+                    home / ".config" / "nour-sentinel" / "auth.attempts.json"
+                )
+                state = json.loads(attempts.read_text(encoding="utf-8"))
+
+                self.assertEqual(state["failures"], 3)
+                self.assertGreater(state["locked_until"], int(time.time()))
+        finally:
+            server.close()
 
 
 if __name__ == "__main__":

@@ -49,6 +49,25 @@ class TestDeduplication(unittest.TestCase):
 
         self.assertEqual(len(deduplicate([first, second])), 2)
 
+    def test_identical_finding_is_not_its_own_duplicate(self):
+        item = finding()
+        merged = deduplicate([item, item])
+
+        self.assertEqual(len(merged), 1)
+        self.assertNotIn("duplicates", merged[0].get("metadata") or {})
+
+    def test_distinct_duplicate_identifier_is_recorded_once(self):
+        first = finding(severity="high")
+        second = finding(severity="low")
+        second["finding_id"] = "f-manual-other"
+
+        merged = deduplicate([first, second])
+
+        self.assertEqual(merged[0]["severity"], "high")
+        self.assertEqual(
+            merged[0]["metadata"]["duplicates"], ["f-manual-other"]
+        )
+
 
 class TestScoring(unittest.TestCase):
 

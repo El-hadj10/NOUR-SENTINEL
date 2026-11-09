@@ -19,6 +19,7 @@ pub struct Listener {
     pub address: String,
     pub port: u16,
     pub family: String,
+    pub protocol: String,
     pub state: String,
     pub pid: Option<i32>,
     pub uid: Option<u32>,
@@ -47,6 +48,9 @@ pub struct HostContext {
     pub hostname: Option<String>,
     pub kernel: Option<String>,
     pub distribution: Option<String>,
+    pub os_id: Option<String>,
+    pub os_version: Option<String>,
+    pub architecture: Option<String>,
     pub interfaces: Vec<Interface>,
     pub listeners: Vec<Listener>,
 }
@@ -57,6 +61,9 @@ impl HostContext {
             hostname: None,
             kernel: None,
             distribution: None,
+            os_id: None,
+            os_version: None,
+            architecture: None,
             interfaces: Vec::new(),
             listeners: Vec::new(),
         }
@@ -68,6 +75,7 @@ struct RawSocket {
     address: String,
     port: u16,
     family: String,
+    protocol: String,
     state: String,
     uid: Option<u32>,
     inode: u64,
@@ -84,10 +92,15 @@ struct ProcessInfo {
 
 /// Lit l'inventaire complet sous `root` (`/` en production).
 pub fn read_inventory(root: &Path) -> HostContext {
+    let os_release = root.join("etc/os-release");
+
     HostContext {
         hostname: read_trimmed(&root.join("etc/hostname")),
         kernel: read_trimmed(&root.join("proc/sys/kernel/osrelease")),
-        distribution: read_distribution(&root.join("etc/os-release")),
+        distribution: read_distribution(&os_release),
+        os_id: read_os_release_value(&os_release, "ID"),
+        os_version: read_os_release_value(&os_release, "VERSION_ID"),
+        architecture: Some(std::env::consts::ARCH.to_string()),
         interfaces: read_interfaces(root),
         listeners: read_listeners(root),
     }
@@ -105,11 +118,17 @@ fn read_trimmed(path: &Path) -> Option<String> {
 }
 
 fn read_distribution(path: &Path) -> Option<String> {
+    read_os_release_value(path, "PRETTY_NAME")
+}
+
+fn read_os_release_value(path: &Path, key: &str) -> Option<String> {
     let text = fs::read_to_string(path).ok()?;
+    let prefix = format!("{}=", key);
 
     text.lines()
-        .find_map(|line| line.strip_prefix("PRETTY_NAME="))
+        .find_map(|line| line.strip_prefix(&prefix))
         .map(|value| value.trim().trim_matches('"').to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn read_listeners(root: &Path) -> Vec<Listener> {
@@ -118,17 +137,26 @@ fn read_listeners(root: &Path) -> Vec<Listener> {
 
     let mut raw = Vec::new();
 
-    for (path, family) in [
-        ("proc/net/tcp", "ipv4"),
-        ("proc/net/tcp6", "ipv6"),
+    for (path, family, protocol) in [
+        ("proc/net/tcp", "ipv4", "tcp"),
+        ("proc/net/tcp6", "ipv6", "tcp"),
+        ("proc/net/udp", "ipv4", "udp"),
+        ("proc/net/udp6", "ipv6", "udp"),
     ] {
         if let Ok(text) = fs::read_to_string(root.join(path)) {
-            raw.extend(parse_proc_net(&text, family));
+            raw.extend(parse_proc_net_protocol(&text, family, protocol));
         }
     }
 
     raw.into_iter()
-        .filter(|socket| socket.state == "listen")
+        .filter(|socket| {
+            if socket.protocol == "tcp" {
+                socket.state == "listen"
+            } else {
+                // UDP : un socket lié non connecté est en écoute applicative.
+                socket.port != 0 && matches!(socket.state.as_str(), "closed" | "listen")
+            }
+        })
         .map(|socket| {
             let process = processes.get(&socket.inode);
 
@@ -136,6 +164,7 @@ fn read_listeners(root: &Path) -> Vec<Listener> {
                 address: socket.address,
                 port: socket.port,
                 family: socket.family,
+                protocol: socket.protocol,
                 state: socket.state,
                 pid: process.map(|info| info.pid),
                 uid: socket.uid,
@@ -154,8 +183,14 @@ fn read_listeners(root: &Path) -> Vec<Listener> {
         .collect()
 }
 
-/// Analyse une table `/proc/net/tcp` ou `tcp6`.
+/// Analyse une table TCP (compatibilité des tests historiques).
+#[cfg(test)]
 fn parse_proc_net(text: &str, family: &str) -> Vec<RawSocket> {
+    parse_proc_net_protocol(text, family, "tcp")
+}
+
+/// Analyse une table `/proc/net/{tcp,tcp6,udp,udp6}`.
+fn parse_proc_net_protocol(text: &str, family: &str, protocol: &str) -> Vec<RawSocket> {
     let mut sockets = Vec::new();
 
     for line in text.lines().skip(1) {
@@ -195,6 +230,7 @@ fn parse_proc_net(text: &str, family: &str) -> Vec<RawSocket> {
             address,
             port,
             family: family.to_string(),
+            protocol: protocol.to_string(),
             state: decode_state(fields[3]).to_string(),
             uid,
             inode,
@@ -766,7 +802,7 @@ mod tests {
         write(
             &root,
             "etc/os-release",
-            "NAME=\"Kali\"\nPRETTY_NAME=\"Kali GNU/Linux Rolling\"\n",
+            "NAME=\"Kali\"\nPRETTY_NAME=\"Kali GNU/Linux Rolling\"\nID=kali\nVERSION_ID=\"2026.1\"\n",
         );
 
         let inventory = read_inventory(&root);
@@ -776,6 +812,12 @@ mod tests {
         assert_eq!(
             inventory.distribution.as_deref(),
             Some("Kali GNU/Linux Rolling")
+        );
+        assert_eq!(inventory.os_id.as_deref(), Some("kali"));
+        assert_eq!(inventory.os_version.as_deref(), Some("2026.1"));
+        assert_eq!(
+            inventory.architecture.as_deref(),
+            Some(std::env::consts::ARCH)
         );
     }
 
@@ -826,5 +868,81 @@ mod tests {
             ),
             Some("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
         );
+    }
+
+    #[test]
+    fn reads_udp_and_udp6_sockets() {
+        let root = temp_root("udp");
+        write(
+            &root,
+            "proc/net/udp",
+            &format!(
+                "{}   0: 00000000:14E9 00000000:0000 07 00000000:00000000 00:00000000 00000000     0        0 555 2 0 0 0 0 10 0\n",
+                TCP_HEADER
+            ),
+        );
+        write(
+            &root,
+            "proc/net/udp6",
+            &format!(
+                "{}   0: 00000000000000000000000000000000:14EA 00000000000000000000000000000000:0000 07 00000000:00000000 00:00000000 00000000     0        0 556 2 0 0 0 0 10 0\n",
+                TCP_HEADER
+            ),
+        );
+
+        let listeners = read_listeners(&root);
+
+        assert_eq!(listeners.len(), 2);
+        assert!(listeners.iter().any(|listener| {
+            listener.protocol == "udp"
+                && listener.family == "ipv4"
+                && listener.address == "0.0.0.0"
+                && listener.port == 5353
+        }));
+        assert!(listeners.iter().any(|listener| {
+            listener.protocol == "udp"
+                && listener.family == "ipv6"
+                && listener.address == "::"
+                && listener.port == 5354
+        }));
+    }
+
+    #[test]
+    fn attributes_udp_socket_to_process() {
+        let root = temp_root("udp-attribution");
+        write(
+            &root,
+            "proc/net/udp",
+            &format!(
+                "{}   0: 00000000:0035 00000000:0000 07 00000000:00000000 00:00000000 00000000   102        0 777 2 0 0 0 0 10 0\n",
+                TCP_HEADER
+            ),
+        );
+        write(&root, "proc/777/comm", "systemd-resolve\n");
+        fs::create_dir_all(root.join("proc/777/fd")).unwrap();
+        symlink("socket:[777]", root.join("proc/777/fd/3")).unwrap();
+
+        let listeners = read_listeners(&root);
+
+        assert_eq!(listeners.len(), 1);
+        assert_eq!(listeners[0].protocol, "udp");
+        assert_eq!(listeners[0].pid, Some(777));
+        assert_eq!(listeners[0].process.as_deref(), Some("systemd-resolve"));
+        assert_eq!(listeners[0].confidence, "probable");
+    }
+
+    #[test]
+    fn ignores_unbound_udp_rows() {
+        let root = temp_root("udp-unbound");
+        write(
+            &root,
+            "proc/net/udp",
+            &format!(
+                "{}   0: 00000000:0000 00000000:0000 07 00000000:00000000 00:00000000 00000000     0        0 999 2 0 0 0 0 10 0\n",
+                TCP_HEADER
+            ),
+        );
+
+        assert!(read_listeners(&root).is_empty());
     }
 }

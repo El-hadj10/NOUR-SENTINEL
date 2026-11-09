@@ -9,6 +9,8 @@ import os
 import sqlite3
 from pathlib import Path
 
+from security_intelligence import collection_trace
+
 SCHEMA_VERSION = 1
 
 SCHEMA = """
@@ -47,6 +49,7 @@ class StoreError(RuntimeError):
 class IntelStore:
     """Connexion SQLite explicite, fermée par l'appelant."""
 
+    @collection_trace.instrument("sqlite", "store.IntelStore.__init__")
     def __init__(self, path):
         self.path = Path(path)
         self.connection = None
@@ -64,6 +67,7 @@ class IntelStore:
         except (OSError, sqlite3.Error) as error:
             raise StoreError(f"base d'intelligence indisponible: {error}") from error
 
+    @collection_trace.instrument("sqlite", "store.save_run")
     def save_run(self, report):
         """Enregistre une exécution et ses constats dans une transaction."""
 
@@ -120,6 +124,7 @@ class IntelStore:
 
         return run_id
 
+    @collection_trace.instrument("sqlite", "store.attach_report")
     def attach_report(self, run_id, report_path):
         """Relie une exécution au rapport privé effectivement écrit."""
 

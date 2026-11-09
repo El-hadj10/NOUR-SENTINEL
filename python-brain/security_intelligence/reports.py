@@ -10,7 +10,10 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+from security_intelligence import collection_trace
 
+
+@collection_trace.instrument("report", "reports.ensure_private_directory")
 def ensure_private_directory(directory):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -19,6 +22,7 @@ def ensure_private_directory(directory):
     return directory
 
 
+@collection_trace.instrument("report", "reports.write_report")
 def write_report(report, directory):
     """Écrit un rapport horodaté et retourne son chemin."""
 

@@ -3,7 +3,7 @@
 ## Objectif
 
 Vérifier la fiabilité du moteur Rust : scanner TCP, couche d'historique SQLite,
-inventaire local des sockets et contrôle d'accès direct (0.6.0-beta.2).
+inventaire local des sockets et interpréteur Python déterministe (0.6.0-beta.3).
 
 ## Emplacement des tests
 
@@ -11,8 +11,8 @@ Les tests unitaires sont intégrés dans les modules concernés.
 
 - `rust-engine/src/scanner.rs` : 7 tests.
 - `rust-engine/src/history.rs` : 20 tests.
-- `rust-engine/src/inventory.rs` : 14 tests.
-- `rust-engine/src/auth.rs` : 4 tests.
+- `rust-engine/src/inventory.rs` : 17 tests.
+- `rust-engine/src/auth.rs` : 2 tests.
 
 ## Tests du scanner (7)
 
@@ -55,7 +55,7 @@ Les tests unitaires sont intégrés dans les modules concernés.
 19. `target_change_is_not_a_service_change` — changement de cible neutralisé.
 20. `comparable_scope_ignores_declaration_order` — ordre de déclaration sans effet.
 
-## Tests de l'inventaire (14)
+## Tests de l'inventaire (17)
 
 ### Analyse des tables `/proc`
 
@@ -76,19 +76,20 @@ Les tests unitaires sont intégrés dans les modules concernés.
 
 ### Contexte hôte
 
-12. `reads_host_context` — hostname, noyau, distribution.
+12. `reads_host_context` — hostname, noyau, distribution, `os_id`, `os_version`, architecture.
 13. `reads_interfaces_with_ipv6_addresses` — décodage ordre réseau de `if_inet6`.
 14. `parses_ip_json_addresses` — adresses de `ip -j addr show`.
+15. `reads_udp_and_udp6_sockets` — `udp`/`udp6`, protocole et familles distingués.
+16. `attributes_udp_socket_to_process` — inode UDP → PID → processus, confiance `probable`.
+17. `ignores_unbound_udp_rows` — port UDP nul exclu.
 
-## Tests de l'authentification (4)
+## Tests de l'authentification (2)
 
 1. `uses_deterministic_project_interpreter` — `.venv/bin/python` et script fixes.
-2. `builds_authenticate_command_without_secret_or_session` — commande `authenticate`, aucun secret ni session.
-3. `refuses_missing_interpreter_or_gate` — environnement incomplet refusé.
-4. `refuses_non_interactive_terminal` — terminal obligatoire.
+2. `refuses_missing_or_non_executable_interpreter` — environnement incomplet ou non exécutable refusé.
 
-La vérification Argon2id, le verrou et le compteur sont couverts par les
-tests Python et les E2E PTY.
+La vérification Argon2id, le verrou, le compteur et `verify()` sont couverts
+par les tests Python et les E2E PTY.
 
 ## Exécution
 
@@ -96,10 +97,10 @@ tests Python et les E2E PTY.
 cargo test --manifest-path rust-engine/Cargo.toml
 ```
 
-## Résultat validé — 0.6.0-beta.2
+## Résultat validé — 0.6.0-beta.3
 
-- 45 tests exécutés (7 scanner, 20 historique, 14 inventaire, 4 auth).
-- 45 tests réussis, 0 échec.
+- 50 tests exécutés (7 scanner, 20 historique, 17 inventaire, 2 auth, 3 gate, 1 versions).
+- 50 tests réussis, 0 échec.
 
 ## Isolation
 

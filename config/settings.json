@@ -9,15 +9,14 @@
             "enabled": true
         },
         "python": {
-            "enabled": true,
-            "executable": "python3"
+            "enabled": true
         }
     },
     "network": {
         "targets": [
-            "127.0.0.1"
+            "default_gateway"
         ],
-        "discover_arp": true,
+        "discover_arp": false,
         "scan_discovered_devices": false,
         "ports": [
             22,

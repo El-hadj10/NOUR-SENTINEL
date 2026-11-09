@@ -8,8 +8,8 @@ Les tests d'intégration ont pour objectif de vérifier le fonctionnement global
 
 Le scénario d'intégration repose sur les étapes suivantes :
 
-1. Rust exige un terminal puis vérifie Argon2id auprès de l'Auth Gate, avant la configuration (`config/settings.json` ou `NOUR_SENTINEL_CONFIG`). Aucune session n'est acceptée.
-2. Rust valide les paramètres de configuration.
+1. Rust démarre `python-brain/main.py --handshake` avec `.venv/bin/python`, avant la configuration (`config/settings.json` ou `NOUR_SENTINEL_CONFIG`). Python exécute Argon2id sous `/dev/tty` et émet `AUTH_OK`.
+2. Rust ne valide la configuration qu'après `AUTH_OK`.
 3. Rust effectue la collecte des observations réseau.
 4. Rust construit le message JSON.
 5. Rust transmet les données au moteur Python via stdin.
@@ -22,7 +22,7 @@ Le scénario d'intégration repose sur les étapes suivantes :
 
 `test_rust_python_pipeline.py`
 
-6 tests du contrat JSON entre les deux moteurs, par invocation directe de `python-brain/main.py`, dont un scénario d'inventaire local (service confirmé et exposition générique).
+7 tests du contrat JSON entre les deux moteurs, par le moteur Python après autorisation de test, dont un scénario d'inventaire local (service confirmé et exposition générique) et un test de refus direct de `main.py` sans terminal.
 
 `test_end_to_end.py`
 
@@ -34,7 +34,7 @@ Le scénario d'intégration repose sur les étapes suivantes :
 
 Chaque scénario place un ancien `session.json` forgé dans le `HOME` isolé : il doit rester ignoré.
 
-## 4. État actuel — 0.6.0-beta.2
+## 4. État actuel — 0.6.0-beta.3
 
 - Chargement de la configuration : validé.
 - Validation des paramètres : validée.
@@ -43,7 +43,7 @@ Chaque scénario place un ancien `session.json` forgé dans le `HOME` isolé : i
 - Analyse Python : validée par tests unitaires et d'intégration.
 - Vérification de la réponse JSON : validée.
 - Enregistrement de l'historique : validé (`history.status == "recorded"`).
-- Tests automatisés d'intégration : 9 tests, 9 réussis (6 pipeline + 3 E2E PTY).
+- Tests automatisés d'intégration : 11 tests, 11 réussis (7 pipeline + 4 E2E PTY).
 
 ## 5. Scénarios couverts
 
@@ -56,6 +56,7 @@ Chaque scénario place un ancien `session.json` forgé dans le `HOME` isolé : i
 - Deux scans comparés : port fermé puis ouvert, changement `state_changed` attendu, base interrogée directement.
 - Inventaire local : `OpenSSH` identifié avec confiance `confirmed`, écoute `0.0.0.0:22` signalée, `capabilities` exposées.
 - Authentification directe sous PTY, ancien `session.json` ignoré, mauvais secret verrouillé et aucune base créée.
+- Refus avant `AUTH_OK` avec ARP activé : aucune configuration validée, aucune découverte ARP, aucune connexion TCP vers le port configuré, aucun rapport ni base SQLite.
 
 ## 6. Isolation des tests
 

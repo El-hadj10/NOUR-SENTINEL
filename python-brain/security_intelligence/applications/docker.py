@@ -6,7 +6,9 @@ Aucun démarrage, arrêt, création ou modification de conteneur.
 
 import json
 
+import authz
 from intelligence.models import make_finding
+from security_intelligence import collection_trace
 from security_intelligence.fingerprinting.inventory import run_command
 
 
@@ -41,8 +43,11 @@ def parse_docker_ps(lines):
     return containers
 
 
+@collection_trace.instrument("application", "docker.collect")
 def collect(config, host, runner=None):
     """Retourne `(findings, metadata, errors)` sans action sur les conteneurs."""
+
+    authz.require()
 
     if not (config or {}).get("docker", {}).get("enabled", True):
         return [], {"containers": []}, []

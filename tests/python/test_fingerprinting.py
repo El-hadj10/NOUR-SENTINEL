@@ -6,7 +6,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 sys.path.insert(0, str(PROJECT_ROOT / "python-brain"))
 
-from intelligence.fingerprinting.services import identify_banner, identify_listener
+from intelligence.fingerprinting.services import (
+    describe_listener,
+    identify_banner,
+    identify_listener,
+)
 
 
 class TestFingerprinting(unittest.TestCase):
@@ -55,6 +59,41 @@ class TestFingerprinting(unittest.TestCase):
     def test_empty_banner_returns_nothing(self):
         self.assertEqual(identify_banner(""), [])
         self.assertEqual(identify_banner(None), [])
+
+    def test_udp_bound_socket_is_not_a_verified_service(self):
+        described = describe_listener(
+            {
+                "address": "0.0.0.0",
+                "port": 5353,
+                "family": "ipv4",
+                "protocol": "udp",
+                "state": "closed",
+            }
+        )
+
+        self.assertTrue(described["socket_bound"])
+        self.assertEqual(described["state"], "bound")
+        self.assertFalse(described["process_identified"])
+        self.assertFalse(described["application_identified"])
+        self.assertFalse(described["application_verified"])
+
+    def test_identified_application_is_still_not_response_verified(self):
+        described = describe_listener(
+            {
+                "address": "127.0.0.1",
+                "port": 22,
+                "protocol": "tcp",
+                "state": "listen",
+                "pid": 42,
+                "process": "sshd",
+            }
+        )
+
+        self.assertTrue(described["socket_bound"])
+        self.assertTrue(described["process_identified"])
+        self.assertTrue(described["application_identified"])
+        self.assertEqual(described["application_service"], "OpenSSH")
+        self.assertFalse(described["application_verified"])
 
 
 if __name__ == "__main__":

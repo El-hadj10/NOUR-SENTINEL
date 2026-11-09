@@ -3,28 +3,47 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 
 # Racine du projet NOUR-SENTINEL
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PYTHON_MAIN = PROJECT_ROOT / "python-brain" / "main.py"
 
+sys.path.insert(0, str(PROJECT_ROOT / "python-brain"))
+
+import authz  # noqa: E402
+from intelligence.engine import analyze  # noqa: E402
+
 
 class TestRustPythonPipeline(unittest.TestCase):
 
+    def setUp(self):
+        authz.reset()
+
+    def tearDown(self):
+        authz.reset()
+
     def run_python_engine(self, payload):
-        """Envoie un JSON au moteur Python et récupère sa réponse."""
+        """Analyse le payload après autorisation explicite du processus."""
 
-        process = subprocess.run(
-            [sys.executable, str(PYTHON_MAIN)],
-            input=payload,
-            text=True,
-            capture_output=True,
-            cwd=PROJECT_ROOT,
-            timeout=10
+        try:
+            data = json.loads(payload)
+        except json.JSONDecodeError as error:
+            return SimpleNamespace(returncode=1, stdout="", stderr=str(error))
+
+        try:
+            with mock.patch.object(authz, "require"):
+                result = analyze(data)
+        except Exception as error:
+            return SimpleNamespace(returncode=1, stdout="", stderr=str(error))
+
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(result),
+            stderr="",
         )
-
-        return process
 
     def test_valid_json_pipeline(self):
         """Vérifie la réception JSON et la production du rapport."""
@@ -73,6 +92,9 @@ class TestRustPythonPipeline(unittest.TestCase):
 
         self.assertEqual(report["engine"], "NOUR SENTINEL")
         self.assertEqual(report["version"], "0.5.0")
+        self.assertEqual(report["core_version"], "0.5.0")
+        self.assertEqual(report["lab_version"], "0.6.0-beta.3")
+        self.assertEqual(report["protocol_version"], "3.0")
         self.assertEqual(report["source"], "rust-network-engine")
         self.assertEqual(report["status"], "analysis_completed")
 
@@ -235,6 +257,23 @@ class TestRustPythonPipeline(unittest.TestCase):
 
         self.assertNotEqual(process.returncode, 0)
         self.assertNotEqual(process.stderr.strip(), "")
+
+    def test_direct_main_without_terminal_is_refused(self):
+        """L'entrée main.py ne collecte rien sans terminal et sans Auth Gate."""
+
+        process = subprocess.run(
+            [sys.executable, str(PYTHON_MAIN)],
+            input="{}",
+            text=True,
+            capture_output=True,
+            cwd=PROJECT_ROOT,
+            timeout=10,
+            start_new_session=True,
+        )
+
+        self.assertEqual(process.returncode, 2)
+        self.assertIn("AUTH ERROR", process.stderr)
+        self.assertEqual(process.stdout, "")
 
     def test_stdout_contains_only_json(self):
         """Vérifie que stdout ne contient aucun message parasite."""

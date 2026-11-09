@@ -11,7 +11,9 @@ import tempfile
 from pathlib import Path
 
 from detector import detect_threats
+import authz
 from intelligence import VERSION, risk_engine
+from version import CORE_VERSION, LAB_VERSION, PROTOCOL_VERSION
 from intelligence.applications import http_analyzer
 from intelligence.fingerprinting import services
 from intelligence.intrusion import detector as intrusion
@@ -20,6 +22,7 @@ from intelligence.passwords import policy_audit
 from intelligence.tls import analyzer as tls_analyzer
 from intelligence.tools import adapters
 from intelligence.vulnerabilities import correlator
+from security_intelligence import collection_trace
 
 CAPABILITIES = (
     "service_fingerprinting",
@@ -30,7 +33,7 @@ CAPABILITIES = (
     "application_security_analysis",
 )
 
-WILDCARD_ADDRESSES = ("0.0.0.0", "::", "[::]")
+WILDCARD_ADDRESSES = frozenset({"0.0.0.0", "::"})
 
 SENSITIVE_WILDCARD_PORTS = {
     22,
@@ -52,6 +55,35 @@ CRITICAL_IF_WILDCARD = {23, 2375, 3306, 3389, 5900}
 HTTP_PORTS = (80, 443, 3000, 8000, 8008, 8080, 8443, 8888, 9443)
 
 TLS_PORTS = (443, 465, 636, 993, 995, 8443, 9443)
+
+
+def normalize_address(address):
+    """Normalise les formes IPv4/IPv6 d'une adresse d'écoute.
+
+    `::`, `[::]`, `0:0:0:0:0:0:0:0`, `::0` et `0.0.0.0` désignent tous une
+    écoute générique. Les adresses IPv4 mappées sont ramenées à leur forme
+    IPv4 pour que la classification reste identique quelle que soit la
+    famille de socket rapportée par le noyau.
+    """
+
+    text = str(address or "").strip().lower()
+
+    if text.startswith("[") and text.endswith("]"):
+        text = text[1:-1]
+
+    if text.startswith("::ffff:") and "." in text:
+        text = text[len("::ffff:") :]
+
+    if text in ("0:0:0:0:0:0:0:0", "::0"):
+        text = "::"
+    elif text == "0:0:0:0:0:0:0:1":
+        text = "::1"
+
+    return text
+
+
+def is_wildcard_address(address):
+    return normalize_address(address) in WILDCARD_ADDRESSES
 
 
 def _private_ipv4(text):
@@ -90,20 +122,18 @@ def classify_exposure(address):
     pare-feu, le NAT et le routage peuvent limiter la portée.
     """
 
-    text = str(address or "").strip()
+    text = normalize_address(address)
 
     if not text:
         return "unknown"
 
-    if text in ("::1", "0:0:0:0:0:0:0:1"):
+    if text == "::1":
         return "local"
 
     if text in WILDCARD_ADDRESSES:
         return "lan"
 
-    lowered = text.lower()
-
-    if lowered.startswith(("fe80:", "fc", "fd")):
+    if text.startswith(("fe80:", "fc", "fd")):
         return "lan"
 
     private = _private_ipv4(text)
@@ -179,7 +209,7 @@ def analyze_inventory(inventory, host):
                 )
             )
 
-        if address in WILDCARD_ADDRESSES and port in SENSITIVE_WILDCARD_PORTS:
+        if is_wildcard_address(address) and port in SENSITIVE_WILDCARD_PORTS:
             severity = "high" if port in CRITICAL_IF_WILDCARD else "medium"
 
             findings.append(
@@ -286,9 +316,11 @@ def analyze_inventory(inventory, host):
     return findings, products
 
 
+@collection_trace.instrument("tcp", "engine.active_checks")
 def active_checks(inventory, config, authorized, host):
     """Vérifications réseau actives, strictement limitées au périmètre."""
 
+    authz.require()
     findings = []
 
     if not isinstance(config, dict) or not config.get("active_probing"):
@@ -368,9 +400,17 @@ def _ssh_policy_findings(config, host):
     return findings, []
 
 
+@collection_trace.instrument("system", "engine._journal_findings")
 def _journal_findings(config, host):
+    """Constats journald, erreurs et nombre d'entrées réellement analysées.
+
+    Le troisième élément permet de distinguer un ``journalctl`` muet (zéro
+    entrée) d'une lecture qui a produit des événements exploitables : sans
+    lui, une lecture vide serait présentée comme terminée.
+    """
+
     if not isinstance(config, dict) or not config.get("journal_audit"):
-        return [], []
+        return [], [], 0
 
     try:
         lines = max(1, int(config.get("journal_lines") or 200))
@@ -382,14 +422,14 @@ def _journal_findings(config, host):
     try:
         process = subprocess.run(command, capture_output=True, text=True, timeout=20)
     except (OSError, subprocess.SubprocessError) as error:
-        return [], [f"journalctl: {error}"]
+        return [], [f"journalctl: {error}"], 0
 
     if process.returncode != 0:
-        return [], [f"journalctl: {process.stderr.strip()[:200]}"]
+        return [], [f"journalctl: {process.stderr.strip()[:200]}"], 0
 
     entries = intrusion.parse_journal_lines(process.stdout.splitlines())
 
-    return intrusion.detect(entries, host=host), []
+    return intrusion.detect(entries, host=host), [], len(entries)
 
 
 def _nmap_findings(ip, ports, host):
@@ -482,9 +522,11 @@ def _trivy_findings(targets, host):
     return findings, errors
 
 
+@collection_trace.instrument("tool", "engine.collect_tool_findings")
 def collect_tool_findings(tools_config, inventory, authorized, host):
     """Exécute les outils activés, uniquement sur le périmètre autorisé."""
 
+    authz.require()
     findings = []
     errors = []
     used = []
@@ -598,8 +640,235 @@ def _dedupe_products(products):
     return result
 
 
+def capability_status(
+    intelligence_config,
+    inventory,
+    authorized,
+    products,
+    tools_used,
+    findings=None,
+    errors=None,
+    journal_entries=None,
+):
+    """Statut réel des six capacités pour cette exécution.
+
+    Les six états sont : ``started`` (lancement sans preuve de fin),
+    ``completed`` (collecte terminée avec résultat exploitable), ``failed``
+    (erreur d'exécution), ``disabled`` (configuration), ``no_data`` (aucune
+    cible/produit) et ``blocked_missing_permission`` (privilège manquant).
+
+    Un démarrage n'est jamais présenté comme un succès : ``completed`` exige
+    une donnée produite (socket, produit, constat) ou une lecture terminée
+    avec des événements exploitables. ``journal_entries`` porte le nombre
+    d'entrées journald réellement analysées ; ``None`` signifie « non
+    transmis » et interdit de conclure à un succès.
+    """
+
+    config = intelligence_config if isinstance(intelligence_config, dict) else {}
+    listeners = [
+        listener
+        for listener in (inventory or {}).get("listeners") or []
+        if isinstance(listener, dict)
+    ]
+    allowed = {str(item) for item in (authorized or [])}
+    in_scope = [
+        listener
+        for listener in listeners
+        if str(listener.get("address") or "") in allowed
+    ]
+    http_targets = [
+        listener for listener in in_scope if listener.get("port") in HTTP_PORTS
+    ]
+    tls_targets = [
+        listener for listener in in_scope if listener.get("port") in TLS_PORTS
+    ]
+    active = bool(config.get("active_probing"))
+    used = {str(item) for item in tools_used or []}
+    findings = [item for item in findings or [] if isinstance(item, dict)]
+    errors = [str(item) for item in errors or []]
+
+    permission_markers = (
+        "permission denied",
+        "operation not permitted",
+        "not permitted",
+        "accès refusé",
+        "acces refuse",
+        "eacces",
+        "privilège",
+        "privilege",
+        "requires root",
+        "root privileges",
+    )
+
+    def entry(status, reason):
+        return {"status": status, "reason": reason}
+
+    def error_status(tokens):
+        matched = [
+            error
+            for error in errors
+            if any(token in error.lower() for token in tokens)
+        ]
+
+        if not matched:
+            return None
+
+        if any(
+            marker in error.lower()
+            for error in matched
+            for marker in permission_markers
+        ):
+            return "blocked_missing_permission"
+
+        return "failed"
+
+    def has_finding(prefixes):
+        return any(
+            str(item.get("check") or "").startswith(prefixes)
+            for item in findings
+        )
+
+    statuses = {}
+
+    nmap_status = error_status(("nmap",))
+
+    if listeners:
+        statuses["service_fingerprinting"] = entry(
+            "completed",
+            f"{len(listeners)} socket(s) analysé(s) ; attribution locale",
+        )
+    elif nmap_status:
+        statuses["service_fingerprinting"] = entry(
+            nmap_status, "nmap n'a pas produit de résultat exploitable"
+        )
+    else:
+        statuses["service_fingerprinting"] = entry(
+            "no_data", "aucun socket en écoute fourni"
+        )
+
+    vulnerability_status = error_status(("osv", "nvd", "kev", "epss", "trivy", "cve"))
+
+    if products:
+        statuses["vulnerability_intelligence"] = entry(
+            "completed", "corrélation hors ligne des produits terminée"
+        )
+    elif "trivy" in used and not vulnerability_status:
+        statuses["vulnerability_intelligence"] = entry(
+            "completed", "trivy a produit un rapport"
+        )
+    elif vulnerability_status:
+        statuses["vulnerability_intelligence"] = entry(
+            vulnerability_status, "recherche de vulnérabilités en erreur"
+        )
+    else:
+        statuses["vulnerability_intelligence"] = entry(
+            "no_data", "aucun produit identifié"
+        )
+
+    tls_status = error_status(("tls", "certificate", "openssl", "handshake"))
+
+    if "testssl" in used and not tls_status:
+        statuses["tls_audit"] = entry("completed", "testssl.sh a produit un rapport")
+    elif not active:
+        statuses["tls_audit"] = entry("disabled", "active_probing désactivé")
+    elif not config.get("tls_probe"):
+        statuses["tls_audit"] = entry("disabled", "tls_probe désactivé")
+    elif not tls_targets:
+        statuses["tls_audit"] = entry(
+            "no_data", "aucun port TLS dans le périmètre autorisé"
+        )
+    elif tls_status:
+        statuses["tls_audit"] = entry(tls_status, "négociation TLS en erreur")
+    elif has_finding(("tls.",)):
+        statuses["tls_audit"] = entry(
+            "completed", "négociation TLS terminée avec un résultat"
+        )
+    else:
+        statuses["tls_audit"] = entry(
+            "started", "négociation tentée ; aucun résultat de handshake exploitable"
+        )
+
+    if not config.get("ssh_policy_audit"):
+        statuses["password_policy_audit"] = entry(
+            "disabled", "ssh_policy_audit désactivé"
+        )
+    else:
+        policy_status = error_status(("sshd", "ssh", "login.defs", "pam", "sudoers"))
+        statuses["password_policy_audit"] = entry(
+            policy_status or "completed",
+            "lecture des politiques terminée"
+            if not policy_status
+            else "lecture des politiques en erreur",
+        )
+
+    if isinstance(journal_entries, bool) or not isinstance(journal_entries, int):
+        journal_entries = None
+
+    if not config.get("journal_audit"):
+        statuses["host_intrusion_detection"] = entry(
+            "disabled", "journal_audit désactivé"
+        )
+    else:
+        journal_status = error_status(("journal", "journalctl", "systemd"))
+
+        if journal_status:
+            statuses["host_intrusion_detection"] = entry(
+                journal_status, "lecture journald en erreur"
+            )
+        elif journal_entries is None:
+            statuses["host_intrusion_detection"] = entry(
+                "started",
+                "lecture journald tentée ; nombre d'entrées non transmis",
+            )
+        elif journal_entries > 0:
+            statuses["host_intrusion_detection"] = entry(
+                "completed",
+                f"{journal_entries} entrée(s) journald analysée(s)",
+            )
+        else:
+            statuses["host_intrusion_detection"] = entry(
+                "no_data", "journald lu ; aucune entrée exploitable"
+            )
+
+    http_status = error_status(("http", "head"))
+
+    if not active:
+        statuses["application_security_analysis"] = entry(
+            "disabled", "active_probing désactivé"
+        )
+    elif not config.get("http_probe"):
+        statuses["application_security_analysis"] = entry(
+            "disabled", "http_probe désactivé"
+        )
+    elif not http_targets:
+        statuses["application_security_analysis"] = entry(
+            "no_data", "aucun port HTTP dans le périmètre autorisé"
+        )
+    elif http_status:
+        statuses["application_security_analysis"] = entry(
+            http_status, "requête HTTP en erreur"
+        )
+    elif has_finding(("http.",)):
+        statuses["application_security_analysis"] = entry(
+            "completed", "réponse HTTP analysée"
+        )
+    else:
+        statuses["application_security_analysis"] = entry(
+            "started", "requête HEAD tentée ; aucun résultat exploitable"
+        )
+
+    return {capability: statuses[capability] for capability in CAPABILITIES}
+
+
+@collection_trace.instrument("analysis", "engine.analyze")
 def analyze(payload):
-    """Point d'entrée unique : payload JSON Rust -> rapport de sécurité."""
+    """Point d'entrée unique : payload JSON Rust -> rapport de sécurité.
+
+    L'autorisation est vérifiée avant toute lecture ou analyse. Le processus
+    qui appelle ``main.py`` l'obtient uniquement après l'Auth Gate Argon2id.
+    """
+
+    authz.require()
 
     if not isinstance(payload, dict):
         raise ValueError("Payload must be a JSON object")
@@ -646,7 +915,9 @@ def analyze(payload):
     findings.extend(ssh_findings)
     errors.extend(ssh_errors)
 
-    journal_findings, journal_errors = _journal_findings(intelligence_config, host)
+    journal_findings, journal_errors, journal_entries = _journal_findings(
+        intelligence_config, host
+    )
     findings.extend(journal_findings)
     errors.extend(journal_errors)
 
@@ -667,8 +938,21 @@ def analyze(payload):
     return {
         "engine": "NOUR SENTINEL",
         "version": VERSION,
+        "core_version": CORE_VERSION,
+        "lab_version": LAB_VERSION,
+        "protocol_version": PROTOCOL_VERSION,
         "source": payload.get("source", "unknown"),
         "capabilities": list(CAPABILITIES),
+        "capability_status": capability_status(
+            intelligence_config,
+            inventory,
+            authorized,
+            products,
+            tools_used,
+            findings,
+            errors,
+            journal_entries=journal_entries,
+        ),
         "network": {
             "neighbors_discovered": len(devices),
             "ports_observed": len(events),
@@ -677,10 +961,17 @@ def analyze(payload):
         "inventory": {
             "hostname": inventory.get("hostname"),
             "kernel": inventory.get("kernel"),
+            "architecture": inventory.get("architecture"),
             "distribution": inventory.get("distribution"),
+            "os_id": inventory.get("os_id"),
+            "os_version": inventory.get("os_version"),
             "interfaces": inventory.get("interfaces") or [],
             "listeners_count": len(inventory.get("listeners") or []),
-            "listeners": inventory.get("listeners") or [],
+            "listeners": [
+                services.describe_listener(item)
+                for item in inventory.get("listeners") or []
+                if services.describe_listener(item) is not None
+            ],
         },
         "services": _dedupe_products(products),
         "devices": devices,

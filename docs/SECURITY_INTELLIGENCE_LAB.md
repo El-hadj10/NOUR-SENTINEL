@@ -1,19 +1,20 @@
-# NOUR SENTINEL LAB — 0.6.0-beta.2
+# NOUR SENTINEL LAB — 0.6.0-beta.3
 
 ## 1. Statut et provenance
 
 - **Ligne stable de référence** : NOUR SENTINEL v0.5.0 (Security Intelligence).
-- **Laboratoire** : 0.6.0-beta.2, couche additive au-dessus des moteurs v0.5.0
+- **Laboratoire** : 0.6.0-beta.3, couche additive au-dessus des moteurs v0.5.0
   présents dans l'arborescence.
 - **Branche de cette itération** : `feature/security-intelligence-lab-beta2`.
-- **Tag** : `v0.6.0-beta.2`, ajouté sans déplacer les tags existants.
+- **Tag** : aucun nouveau tag dans cette étape ; `v0.6.0-beta.2` reste le
+  dernier tag et n'est pas déplacé.
 - **Fusion** : non effectuée ; rebasage et audit complets requis avant
   intégration. Aucun historique réécrit.
 
-La bêta.2 corrige la faiblesse de la bêta.1 : un fichier `session.json`
-contenant une date d'expiration future pouvait ouvrir l'accès sans vérifier la
-phrase secrète. **Aucune session locale n'existe plus.** Chaque lancement
-opérationnel vérifie directement le hash Argon2id.
+La bêta.2 a supprimé la session locale forgeable. La bêta.3 ferme les
+entrées Python directes : `main.py` authentifie avant de lire le payload,
+Rust attend `AUTH_OK` avant toute collecte, et `engine.analyze()` comme les
+fonctions `lab.run_*` exigent un jeton mémoire délivré par l'Auth Gate.
 
 Le laboratoire ne remplace pas les six moteurs v0.5.0 : il les réutilise
 (`intelligence/`) et ajoute l'authentification, le CLI, la liste blanche, les
@@ -57,13 +58,16 @@ lancer-nour-sentinel.sh
 | Configuration | `security_intelligence/config.py` | Validation, liste blanche, chemins confinés |
 | Inventory | `fingerprinting/inventory.py` | OS, dpkg/rpm, systemd, `ss` |
 | Sondes | `fingerprinting/service_probe.py` | Bannière SSH, HEAD HTTP |
+| Profils | `python-brain/security_intelligence/profiles.py` | Dictionnaire `passif`/`standard`/`agressif` : ports, timeout, concurrence |
 | TLS | `tls/analyzer.py` | Négociations 1.2/1.3, certificat OpenSSL |
 | Politiques | `passwords/policy.py` | `sshd -T`, `login.defs`, PAM |
 | Journald | `intrusion/journal.py` | Indicateurs agrégés, aucun log brut |
 | Docker | `applications/docker.py` | `docker ps` en lecture seule |
 | Externe | `vulnerabilities/online.py` | OSV/NVD/KEV/EPSS, cache et budget |
 | Rapports | `reports.py`, `store.py` | JSON 0600, SQLite 0600, dossiers 0700 |
-| Rust | `rust-engine/src/auth.rs` | Terminal requis, Auth Gate avant configuration/réseau |
+| Rust | `rust-engine/src/auth.rs` | Interpréteur `.venv` fixe, handshake avant configuration/réseau |
+| Autorisation | `python-brain/authz.py` | Jeton mémoire non persistant, refus des appels directs |
+| Entrée Python | `python-brain/main.py` | Auth Gate avant lecture du payload |
 
 ## 3. Authentification propriétaire
 
@@ -84,15 +88,19 @@ la phrase n'est jamais enregistrée, passée en argument ou journalisée.
 
 ### Parcours
 
-1. Le binaire Rust exige un **terminal interactif**.
-2. Rust appelle `auth_gate.py authenticate` avec l'interpréteur fixe
-   `.venv/bin/python` du projet ; aucune variable ne peut le substituer.
+1. Rust démarre `python-brain/main.py --handshake` avec l'interpréteur fixe
+   `.venv/bin/python`, avant la configuration, l'ARP et le TCP.
+2. `main.py` ouvre `/dev/tty` et exécute l'Auth Gate ; un lancement sans
+   terminal est refusé.
 3. Python affiche une invite masquée ; Argon2id compare la saisie au hash.
-4. Un échec met à jour le compteur persistant ; la collecte réseau ne démarre
-   pas. Trois échecs déclenchent le verrouillage.
-5. Un succès remet le compteur à zéro et Rust poursuit vers la configuration.
-6. Le CLI `--intel` effectue exactement la même vérification avant chaque
-   commande opérationnelle.
+4. Un échec met à jour le compteur ; aucune collecte ne démarre. Trois échecs
+   déclenchent le verrouillage.
+5. Un succès remet le compteur à zéro, délivre un jeton mémoire et émet
+   `AUTH_OK` ; Rust poursuit alors seulement vers la configuration et la
+   collecte.
+6. `intelligence.engine.analyze()` et chaque `lab.run_*` exigent ce jeton ;
+   un appel direct sans Auth Gate est refusé.
+7. Le CLI `--intel` effectue la même vérification avant chaque commande.
 
 ### Verrou et limitations
 
@@ -125,6 +133,22 @@ Commandes :
 - une personne contrôlant le même compte peut modifier l'environnement, le
   code, le binaire ou les fichiers privés ; `HOME` et l'environnement
   d'exécution doivent rester fiables ;
+- les 46 points de collecte sont instrumentés (`collection_trace.py`) : la
+  tentative est tracée avant `authz.require()`, le démarrage après. Les
+  rapports (`reports.write_report`), la mémoire SQLite (`IntelStore`),
+  `adapters.run_tool()`, les sondes basses et les clients externes sont eux
+  aussi refusés sans autorisation ;
+- `subprocess`, `socket`, `urllib`, `rusqlite` et les fonctions Rust restent
+  néanmoins appelables par du code Python arbitraire ou un binaire modifié
+  dans le même processus. L'instrumentation n'est pas un bac à sable : ce
+  n'est pas une frontière contre un code déjà compromis ;
+- l'état de limitation (`auth.attempts.json`) est refusé au-delà de 4096
+  octets, avec permissions 0600 et propriétaire courant ; un état altéré ou
+  incohérent provoque un refus explicite plutôt qu'un déverrouillage ;
+- `authz._grant()` est privé et n'est appelé que par l'Auth Gate ; un code
+  Python arbitraire pourrait toutefois le rendre public ou modifier l'état
+  mémoire. La protection réelle repose aussi sur les permissions du compte,
+  le chiffrement du disque et l'intégrité du code ;
 - la protection doit être complétée par un compte Linux protégé, des
   permissions système correctes et le chiffrement du disque.
 
@@ -133,8 +157,11 @@ Commandes :
 ```bash
 ./lancer-nour-sentinel.sh --intel inventory
 ./lancer-nour-sentinel.sh --intel full-local
-./lancer-nour-sentinel.sh --intel tls --target 127.0.0.1 --port 8443
-./lancer-nour-sentinel.sh --intel fingerprint --target 127.0.0.1 --port 22 --protocol ssh
+./lancer-nour-sentinel.sh --intel discover
+./lancer-nour-sentinel.sh --intel scan --target 192.168.1.1 --protocol both --profile agressif --confirm-authorized
+GATEWAY="$(ip -4 route show default | awk '$1 == "default" && $2 == "via" {print $3}')"
+./lancer-nour-sentinel.sh --intel tls --target "$GATEWAY" --port 8443
+./lancer-nour-sentinel.sh --intel fingerprint --target "$GATEWAY" --port 22 --protocol ssh
 ./lancer-nour-sentinel.sh --intel cve --online
 ./lancer-nour-sentinel.sh --intel cve --online --package openssh-server --version 9.6p1
 ```
@@ -144,21 +171,68 @@ Commandes :
   OpenSSL). Aucun réseau.
 - `full-local` : inventaire + `sshd -T` + `login.defs` + PAM + journald
   (désactivé par défaut) + Docker read-only. Aucun scan réseau.
+- `discover` : affiche les IPv4 RFC1918 avec une entrée complète dans la table
+  ARP locale ; lecture passive, aucune sonde et aucune persistance des
+  résultats. Le rapport contient `mode` (`network_discovery`),
+  `neighbor_count`, `neighbors` (`ip`, `interface`) et `active_probes`
+  (toujours faux) : les adresses MAC ne sont jamais exposées.
+- `scan` : après sélection manuelle d'une IP affichée par `discover`, exécute
+  des sondes TCP, UDP ou les deux sur cet hôte seulement. La commande exige
+  `--confirm-authorized`, accepte uniquement une IPv4 RFC1918 et au plus
+  32 ports par protocole, et ne parcourt ni sous-réseau ni liste de voisins.
+  `--tcp-ports` et `--udp-ports` acceptent des ports séparés par des virgules,
+  sans plages. Les données de découverte et de sondage restent sur stdout et
+  ne sont pas écrites dans les rapports ou la base. Le rapport contient
+  `mode` (`network_scan`), `target`, `protocols` (`tcp` et/ou `udp`, chacun
+  avec `port` et `state`), `limits` et `udp_note`. États TCP : `open`,
+  `closed`, `filtered_or_timeout`, `unreachable` ; états UDP : `open`,
+  `closed`, `open_or_filtered`, `unreachable`. Avec les listes par défaut
+  (20 TCP + 11 UDP à 0,5 s), la durée maximale est d'environ 16 secondes.
+- Un timeout UDP est rapporté `open_or_filtered` : l'absence de réponse ne
+  permet pas de distinguer un port ouvert silencieux d'un filtrage. Un état
+  `closed` en UDP provient d'un ICMP port unreachable, jamais d'une réponse
+  applicative.
 - `fingerprint` : une seule bannière SSH ou un seul HEAD HTTP.
 - `tls` : TLS 1.2 et TLS 1.3 séparément, certificat (sujet, émetteur, dates,
   SAN), expiration et auto-signature.
+
+### Profils d'agressivité
+
+`--profile` (commandes `scan`, `fingerprint`, `tls`) choisit une entrée du
+dictionnaire `security_intelligence/profiles.py` :
+
+| Profil | Ports TCP/UDP par défaut | Timeout | Sondes simultanées |
+|---|---|---|---|
+| `passif` | 4 / 2 | ×2 (scan 1,0 s) | 1 |
+| `standard` (défaut) | 20 / 11 | ×1 (scan 0,5 s) | 1 |
+| `agressif` | 32 / 14 | ×0,5 (scan 0,25 s) | 4 |
+
+Un profil ne lève aucun garde-fou : `--confirm-authorized`, l'IPv4 présente
+dans la table ARP, la liste blanche et le plafond de 32 ports par protocole
+restent obligatoires. Une liste `--tcp-ports`/`--udp-ports` explicite prime
+sur les ports du profil. Les commandes actives seulement sont concernées :
+`discover` reste une lecture ARP passive, sans profil.
 - `cve --online` : OSV par paquet, NVD par mots-clés, KEV et EPSS. Sans
   `--online`, aucun appel externe n'est effectué.
 
 ## 5. Liste blanche réseau
 
-`config/security_intelligence.json` n'autorise par défaut que `127.0.0.1` et
-`localhost`. Toute autre cible est refusée **avant** la sonde, avec code de
-sortie 3. `full-local` et `inventory` ne lancent aucune sonde réseau.
+`config/security_intelligence.json` conserve le marqueur `default_gateway`,
+résolu en une IPv4 privée RFC1918 unique uniquement au moment d'une sonde TLS
+ou fingerprint. La résolution exécute `ip -4 route show default` et exige le
+jeton mémoire, comme toute commande. L'adresse n'est pas enregistrée dans le
+dépôt. Une route
+absente ou ambiguë entraîne un refus. `discover` et `scan` sont distincts de
+cette liste blanche : `scan` exige une IP ARP choisie par l'utilisateur et
+une confirmation d'autorisation, sans balayage automatique. `full-local` et
+`inventory` ne lancent aucune sonde réseau et ne requièrent pas de route par
+défaut.
 
 Règles :
 
-- une cible doit être une IP littérale ou `localhost` ;
+- la cible par défaut est l'unique passerelle IPv4 privée RFC1918 ;
+- une configuration personnalisée peut utiliser des IP littérales ;
+- `default_gateway` doit être l'unique entrée de la liste d'autorisation ;
 - `localhost` est résolu en `127.0.0.1` pour les sondes ;
 - aucune redirection HTTP n'est suivie ;
 - aucun corps HTTP n'est téléchargé (HEAD uniquement) ;
@@ -201,24 +275,72 @@ systemd 259, Docker 29, `dpkg`, `ss`.
 
 | Contrôle | Résultat |
 |---|---|
-| Rust (`cargo test`) | **45/45** (7 scanner, 20 historique, 14 inventaire, 4 auth) |
-| Python, venv complet | **150/150** |
-| Intégration | **9/9** : 6 pipeline + 3 E2E PTY |
+| Rust (`cargo test`) | **52/52** (7 scanner, 20 historique, 17 inventaire, 2 auth, 3 gate, 2 gateway, 1 versions) |
+| Python, venv complet | **231/231** |
+| Intégration | **11/11** : 7 pipeline (dont refus direct) + 4 E2E PTY |
 | E2E PTY | pipeline complet, persistance deux scans, mauvais secret verrouillé |
 | Ancien `session.json` forgé | ignoré : l'invite Argon2id reste obligatoire |
 | `bash -n lancer-nour-sentinel.sh` | réussi |
 | JSON | `settings.json`, `security_intelligence.json`, `protocol.json` valides |
 | `--help` / `--version` | exécutés |
+| Entrées directes sans TTY | `main.py` exit 2, CLI exit 2, lanceur `--intel` exit 2 |
+| Collecteurs publics | refus `AuthorizationError` avant commande/sonde |
+| Outils externes via moteur | refus avant `adapters.run_tool()` |
+| Cycle PTY Python | invite, `AUTH_OK`, puis `analysis_completed` |
+| Instrumentation collecte | 46/46 sites refusés avant tout puits (`subprocess`, socket, HTTP, SQLite, rapport) |
+| Profils d'agressivité | 3 profils bornés ; ports, timeout, concurrence ; confirmation, ARP, liste blanche et plafond de 32 ports conservés |
+| Inspection statique | tous les appels réseau, outils, SQLite et rapports recensés ; entrées opérationnelles gardées |
+| `verify()` | même compteur, même verrou et même remise à zéro qu'`authenticate()` |
+| UDP/UDP6 | socket lié, processus identifié, application identifiée et réponse vérifiée sont des champs distincts ; `application_verified` reste faux sans réponse |
+| `PASS_MAX_DAYS` | 99999 accepté, rotation < 90 j signalée, valeur illisible `to_verify` ; seuil contextuel documenté (PCI DSS 8.3.9, NIST SP 800-63B) |
+| Versions | `core_version` 0.5.0, `lab_version` 0.6.0-beta.3, `protocol_version` 3.0 ; `version`/`base_version` conservés |
+| Frontière Rust | `gate::require()` actif dans `scanner::*`/`history::*` ; binaire compilé sans le contournement de test |
+| Compteur persistant | 6 processus concurrents : 3 échecs comptés, 3 refus sans perte |
+| `verify()` verrouillé | refus pendant le verrou, compteur inchangé, aucun contournement |
 
 Les E2E utilisent un `HOME` temporaire, un hash Argon2id réel, un PTY et un
 `session.json` forgé. Aucun secret n'est passé en variable d'environnement.
-Les 15 tests d'authentification sont ignorés sans `argon2-cffi` ; le venv du
+Les 30 tests d'authentification sont ignorés sans `argon2-cffi` ; le venv du
 laboratoire les exécute tous.
 
 Limites de validation : le test réel de `sshd -T` complet dépend de
 l'environnement (privilèges, clés d'hôte). Sans clés d'hôte accessibles,
 `sshd -T` échoue et l'erreur est conservée dans `errors` ; elle n'est pas
 masquée.
+
+### 8.1 Statuts de capacité
+
+| Statut | Signification |
+|---|---|
+| `started` | La capacité a été lancée, sans preuve de résultat exploitable. |
+| `completed` | Une donnée a été produite (socket, produit, constat) ou une lecture s'est terminée avec des événements exploitables. |
+| `failed` | L'exécution a rencontré une erreur. |
+| `disabled` | La configuration exclut la capacité. |
+| `no_data` | La capacité est autorisée mais aucune cible/produit ne la déclenche. |
+| `blocked_missing_permission` | L'erreur est un refus de privilège (`Permission denied`, `EACCES`, etc.). |
+
+Le nombre d'entrées journald réellement analysées fait partie du statut : un
+`journalctl` qui réussit sans aucune entrée donne `no_data`, jamais
+`completed`. Une erreur reste prioritaire sur ce décompte.
+
+### 8.2 Inventaire UDP
+
+Un port UDP n'est jamais présenté comme un service disponible :
+
+1. **socket lié** : présence dans `/proc/net/udp` ou `ss -lunH` ;
+2. **processus identifié** : inode attribué à un PID (ou `pid`/`process` fourni) ;
+3. **application identifiée** : signature de processus connue (`application_identified`) ;
+4. **réponse applicative vérifiée** : `application_verified`, toujours `false` en inventaire passif.
+
+### 8.3 Frontière de sécurité Rust
+
+Le modèle de menace retenu est celui d'un opérateur qui lance le binaire
+non modifié. L'ordre `Auth Gate → AUTH_OK → collecte` suffit contre une
+régression accidentelle, mais pas contre un futur remaniement : `gate::require()`
+ajoute un verrou mémoire dans `scanner::*` et `history::*`, activé uniquement
+après `AUTH_OK`. Il ne prétend pas empêcher un administrateur de modifier le
+programme, ni du code injecté d'appeler `authorize()` ; cette limite reste
+explicitement hors périmètre.
 
 ## 9. Garde-fous
 
@@ -229,14 +351,16 @@ masquée.
 - Aucune remédiation ni blocage automatique.
 - Aucune redirection HTTP inter-hôte, aucun corps HTTP.
 - Les sondes actives sont limitées à la liste blanche.
+- Aucun profil d'agressivité ne lève la confirmation, la sélection ARP, la
+  liste blanche ou le plafond de 32 ports par protocole.
 - Une sévérité haute ou critique sans preuve reste plafonnée par le modèle
   v0.5.0.
 
 ## 10. Installation sur Kali Linux
 
 ```bash
-unzip NOUR-SENTINEL-LAB-0.6.0-beta2.zip
-cd NOUR-SENTINEL-LAB-0.6.0-beta2
+unzip NOUR-SENTINEL-LAB-0.6.0-beta3.zip
+cd NOUR-SENTINEL-LAB-0.6.0-beta3
 chmod +x lancer-nour-sentinel.sh
 
 # Si python3-venv manque :
@@ -265,6 +389,8 @@ bash -n lancer-nour-sentinel.sh
 |---|---|---|
 | 0.6.0-beta.1 | Auth, six modules, CLI, stockage | suites vertes, limites documentées |
 | 0.6.0-beta.2 | Supprimer la session forgeable, durcir l'Auth Gate | Argon2id direct, lock, compteur, E2E PTY |
+| 0.6.0-beta.3 | Fermer les entrées Python directes | jeton mémoire, handshake, tests de refus |
+| 0.6.0-beta.3 | Profils d'agressivité des sondes | dictionnaire borné, garde-fous inchangés |
 | 0.6.0-beta.3 | Durcissement CVE/TLS et corrélation | preuves, faux positifs, actif → CVE |
 | Fusion | Rebaser sur v0.5.0 puis intégrer par lots | audit complet, tests E2E, revue sécurité |
 
@@ -280,4 +406,4 @@ bash -n lancer-nour-sentinel.sh
 
 ---
 
-**NOUR SENTINEL LAB — dossier de livraison 0.6.0-beta.2**
+**NOUR SENTINEL LAB — dossier de livraison 0.6.0-beta.3**

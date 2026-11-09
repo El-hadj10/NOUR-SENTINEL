@@ -13,6 +13,8 @@ import re
 import socket
 from pathlib import Path
 
+from security_intelligence import collection_trace
+
 # (service, produit, motif). L'ordre détermine la priorité.
 SIGNATURES = (
     ("ssh", "OpenSSH", re.compile(r"SSH-2\.0-OpenSSH[_-](?P<version>[\w.\-]+)")),
@@ -86,6 +88,37 @@ def identify_banner(banner):
     return results
 
 
+def describe_listener(listener):
+    """Décrit ce qui est réellement prouvé pour un socket.
+
+    Un socket lié n'est pas un service disponible : l'application n'est
+    identifiée que par son processus local, et aucune réponse applicative
+    n'est vérifiée par l'inventaire. ``application_verified`` reste donc
+    toujours ``false`` ici.
+    """
+
+    if not isinstance(listener, dict):
+        return None
+
+    identity = identify_listener(listener)
+    protocol = str(listener.get("protocol") or "tcp").lower()
+    state = str(listener.get("state") or ("listen" if protocol == "tcp" else "bound"))
+
+    if protocol == "udp" and state in ("listen", "closed"):
+        state = "bound"
+
+    return {
+        **listener,
+        "protocol": protocol,
+        "state": state,
+        "socket_bound": bool(listener.get("port")),
+        "process_identified": bool(listener.get("pid") or listener.get("process")),
+        "application_identified": bool(identity),
+        "application_service": (identity or {}).get("product"),
+        "application_verified": False,
+    }
+
+
 def identify_listener(listener):
     """Identifie un service à partir de son processus local (preuve forte)."""
 
@@ -116,6 +149,7 @@ def identify_listener(listener):
     return None
 
 
+@collection_trace.instrument("tcp", "services.probe_banner")
 def probe_banner(ip, port, timeout=0.8, request=None):
     """Lit une bannière. À n'appeler que sur une cible autorisée."""
 

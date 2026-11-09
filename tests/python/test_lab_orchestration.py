@@ -12,7 +12,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from lab_helpers import make_config
 from intelligence.models import make_finding
-from security_intelligence import VERSION, lab
+import authz
+from security_intelligence import (
+    BASE_VERSION,
+    LAB_VERSION,
+    PROTOCOL_VERSION,
+    VERSION,
+    lab,
+)
 from security_intelligence.store import IntelStore
 
 
@@ -45,6 +52,11 @@ def inventory_fixture():
 
 
 class TestOrchestration(unittest.TestCase):
+    def setUp(self):
+        authorization = mock.patch.object(authz, "require")
+        authorization.start()
+        self.addCleanup(authorization.stop)
+
     def test_inventory_report_is_persisted_privately(self):
         with tempfile.TemporaryDirectory() as directory:
             config = make_config(directory)
@@ -55,6 +67,9 @@ class TestOrchestration(unittest.TestCase):
                 report = lab.run_inventory(config)
 
             self.assertEqual(report["version"], VERSION)
+            self.assertEqual(report["lab_version"], LAB_VERSION)
+            self.assertEqual(report["core_version"], BASE_VERSION)
+            self.assertEqual(report["protocol_version"], PROTOCOL_VERSION)
             self.assertEqual(report["mode"], "inventory")
             self.assertEqual(report["inventory"]["package_count"], 2)
             self.assertEqual(report["findings"], [])

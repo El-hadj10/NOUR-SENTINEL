@@ -16,8 +16,10 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+import authz
 from intelligence.models import make_finding
 from intelligence.tls import analyzer as stable_analyzer
+from security_intelligence import collection_trace
 from security_intelligence.config import resolve_target
 
 PROTOCOLS = (
@@ -52,7 +54,10 @@ def _connect(ip, port, timeout, version=None):
             }
 
 
+@collection_trace.instrument("tcp", "tls.negotiate")
 def negotiate(ip, port, version, timeout=3.0):
+    authz.require()
+
     try:
         return _connect(ip, port, timeout, version=version)
     except (OSError, ValueError) as error:
@@ -111,9 +116,11 @@ def parse_openssl_output(text):
     return certificate
 
 
+@collection_trace.instrument("tcp", "tls.read_certificate")
 def read_certificate(ip, port, timeout=3.0):
     """Négocie, écrit le DER en 0600 et délègue le décodage à OpenSSL."""
 
+    authz.require()
     connection = _connect(ip, port, timeout)
     der = connection.get("certificate_der")
 
@@ -169,8 +176,11 @@ def read_certificate(ip, port, timeout=3.0):
             pass
 
 
+@collection_trace.instrument("tcp", "tls.audit")
 def audit(target, port, timeout=3.0, allowed=()):
     """Audit TLS complet ; retourne `(findings, metadata, errors)`."""
+
+    authz.require()
 
     try:
         ip = resolve_target(target, allowed)[0]

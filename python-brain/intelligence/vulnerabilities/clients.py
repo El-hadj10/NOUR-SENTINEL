@@ -10,6 +10,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from security_intelligence import collection_trace
+
 NVD_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={cve}"
 KEV_URL = (
     "https://www.cisa.gov/sites/default/files/feeds/"
@@ -28,6 +30,7 @@ def build_epss_url(cve):
     return EPSS_URL.format(cve=urllib.parse.quote(str(cve)))
 
 
+@collection_trace.instrument("external", "clients._get_json")
 def _get_json(url, timeout=10.0):
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
 
@@ -50,6 +53,7 @@ def fetch_kev():
     return _get_json(KEV_URL)
 
 
+@collection_trace.instrument("external", "clients.query_osv")
 def query_osv(package, version, ecosystem=None):
     query = {"package": {"name": package}, "version": version}
 

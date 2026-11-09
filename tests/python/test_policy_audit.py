@@ -68,7 +68,7 @@ class TestLoginDefs(unittest.TestCase):
     def test_weak_password_policy(self):
         findings = audit_login_defs(
             """
-            PASS_MAX_DAYS 99999
+            PASS_MAX_DAYS 30
             PASS_MIN_LEN 6
             PASS_WARN_AGE 3
             ENCRYPT_METHOD MD5
@@ -77,10 +77,31 @@ class TestLoginDefs(unittest.TestCase):
 
         checks = {finding["check"] for finding in findings}
 
-        self.assertIn("password_policy.password_expiration", checks)
+        self.assertIn("password_policy.password_rotation", checks)
         self.assertIn("password_policy.password_length", checks)
         self.assertIn("password_policy.password_warning", checks)
         self.assertIn("password_policy.password_hash", checks)
+
+    def test_no_expiration_is_not_flagged(self):
+        self.assertEqual(audit_login_defs("PASS_MAX_DAYS 99999\n"), [])
+
+    def test_short_rotation_is_low(self):
+        findings = audit_login_defs("PASS_MAX_DAYS 30\n")
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(
+            findings[0]["check"], "password_policy.password_rotation"
+        )
+        self.assertEqual(findings[0]["severity"], "low")
+
+    def test_invalid_max_days_is_to_verify(self):
+        findings = audit_login_defs("PASS_MAX_DAYS abc\n")
+
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(
+            findings[0]["check"], "password_policy.password_expiration"
+        )
+        self.assertEqual(findings[0]["status"], "to_verify")
 
     def test_strong_policy_produces_nothing(self):
         findings = audit_login_defs(

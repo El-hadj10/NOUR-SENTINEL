@@ -6,8 +6,10 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 sys.path.insert(0, str(PROJECT_ROOT / "python-brain"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from intelligence.tools import adapters
+from lab_helpers import AuthorizedTestCase
 
 
 NMAP_XML = """<?xml version="1.0"?>
@@ -72,7 +74,7 @@ class TestCommands(unittest.TestCase):
         self.assertIn("vuln,config", adapters.build_trivy_fs_command("/tmp"))
 
 
-class TestParsers(unittest.TestCase):
+class TestParsers(AuthorizedTestCase):
 
     def test_nmap_keeps_only_open_services(self):
         services = adapters.parse_nmap_xml(NMAP_XML)

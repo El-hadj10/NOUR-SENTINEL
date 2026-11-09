@@ -1,5 +1,57 @@
 # NOUR SENTINEL — Changelog
 
+## [0.6.0-beta.3] — Entry Point Hardening
+
+### Fixed
+- `python-brain/main.py` exécute l'Auth Gate Argon2id avant de lire le payload.
+- `intelligence.engine.analyze()`, `engine.collect_tool_findings()`, `engine.active_checks()` et les fonctions publiques `lab.run_*` refusent de collecter sans autorisation dans le processus courant.
+- Les collecteurs publics du laboratoire (`inventory.collect`, `policy.collect`, `journal.collect`, `docker.collect`, `tls.audit`, `service_probe.*`, `OnlineIntel.*`) appellent `authz.require()` avant toute commande ou sonde.
+- Rust démarre le cerveau Python avant la configuration, l'ARP et le TCP, puis attend `AUTH_OK` avant toute collecte.
+- L'interpréteur du cerveau Python est fixé à `.venv/bin/python` ; le champ obsolète `engines.python.executable` est supprimé de la configuration, du schéma Rust et de la validation.
+- `auth_gate.verify()` respecte le verrouillage persistant et enregistre chaque échec dans le compteur : aucune API publique ne permet d'essayer des secrets sans limitation. Un succès remet le compteur à zéro.
+- L'état de limitation est plafonné à 4096 octets et refuse un `locked_until` arbitrairement lointain.
+- Inspection statique : `adapters.run_tool`, `http_analyzer.probe_http`, `tls.inspect`, `services.probe_banner`, `inventory.run_command`, `engine._journal_findings`, `UrllibTransport.fetch` et les clients externes sont instrumentés et refusés sans jeton.
+
+### Added
+- Jeton d'autorisation mémoire non persistant (`authz.py`), délivré uniquement après une vérification Argon2id réussie et révoqué après un échec.
+- Test de refus direct de `main.py` sans terminal et tests de refus des fonctions `lab`/`engine` sans autorisation.
+- Tests de refus de tous les `lab.run_*`, des collecteurs bas niveau et du chemin outils externes.
+- Instrumentation en mémoire de 46 points de collecte (`collection_trace.py`) : chaque tentative est tracée avant l'autorisation, chaque démarrage après. Aucune commande, sonde, écriture de rapport ou accès SQLite n'est atteint sans jeton.
+- Attribution TCP/UDP/UDP6 : `/proc/net/udp` et `udp6` sont lus, `protocol` est exposé et l'attribution inode → processus s'applique aussi à UDP.
+- Classification des wildcards IPv4/IPv6 : `::`, `[::]`, `0:0:0:0:0:0:0:0`, `::0` et les formes IPv4 mappées sont normalisées.
+- Identification système complète : `architecture`, `os_id` et `os_version` sont exposés côté Python et Rust.
+- Statut réel des six capacités : `capability_status` distingue `started`, `completed`, `failed`, `disabled`, `no_data` et `blocked_missing_permission`. Un démarrage n'est jamais présenté comme une collecte réussie.
+- Inventaire UDP : distinction explicite entre socket lié, processus identifié, application identifiée et réponse applicative vérifiée (`application_verified: false` tant qu'aucune réponse n'est observée).
+- Versions harmonisées : `core_version` (0.5.0), `lab_version` (0.6.0-beta.3) et `protocol_version` (3.0) dans les deux rapports et la bannière ; `version`/`base_version` restent pour les anciens lecteurs.
+- Frontière Rust : verrou mémoire `gate::require()` dans `scanner::*` et `history::*`, activé uniquement après `AUTH_OK`.
+- Les rapports (`reports.write_report`) et la mémoire SQLite (`IntelStore`) exigent désormais une autorisation, y compris hors orchestration.
+- Tests P0.3 : registre exhaustif des 46 sites, refus de chaque site avec puits `subprocess`/socket/HTTP/SQLite/rapport instrumentés, absence d'artefact avant authentification.
+- Tests P0.4 : 6 authentifications concurrentes, intégrité du compteur, états malformés ou surdimensionnés, permissions 0600, `verify()` verrouillé et limité, cohérence après redémarrage.
+- Commandes `discover` (lecture ARP passive, MAC jamais exposées) et `scan` (une IPv4 ARP choisie, `--confirm-authorized`, 32 ports maximum par protocole, aucun balayage de sous-réseau). Chaque commande exige le jeton mémoire ; la résolution de la passerelle par défaut exécute `ip` après autorisation.
+- Profils d'agressivité `passif`/`standard`/`agressif` (`profiles.py`) pour `scan`, `fingerprint` et `tls` : dictionnaire de ports, timeout et concurrence. Aucun profil ne contourne la confirmation, la sélection ARP, la liste blanche ou le plafond de 32 ports.
+- Correction des auto-doublons : un constat identique n'est plus enregistré comme son propre doublon et un identifiant identique n'est plus ajouté à `metadata.duplicates`.
+- `PASS_MAX_DAYS` révisé : 99999 (pas d'expiration) n'est plus signalé ; une rotation < 90 jours est signalée `low`, une valeur illisible `to_verify`. Le seuil de 90 jours est documenté comme contextuel (PCI DSS v4.0 8.3.9), pas comme une règle universelle ; la référence NIST SP 800-63B §5.1.1.2 reste citée.
+
+### Changed
+- Le contrôle Rust ne lance plus une seconde authentification : Python est l'unique porte d'entrée, avec handshake avant collecte.
+- Les tests d'orchestration autorisent explicitement le contrôle par patch de test ; aucun `grant()` public ne subsiste.
+- La cible réseau par défaut devient l'unique passerelle IPv4 RFC1918 résolue
+  à l'exécution (`default_gateway`) ; l'ARP passif est désactivé par défaut et
+  aucun voisin n'est ajouté au périmètre.
+
+### Validated
+- 52 tests Rust (7 scanner, 20 historique, 17 inventaire, 2 auth, 3 gate, 2 gateway, 1 versions).
+- 231 tests Python dans le venv complet (dont 14 tests de profils, 5 tests P0.3 et 15 tests P0.4).
+- 11 tests d'intégration : 7 pipeline (dont refus direct) + 4 E2E PTY.
+- `bash -n` réussi, compilation Python réussie, `git diff --check` propre.
+
+### Limitations connues
+- La barrière ne résiste pas à root ni à un compte Linux déjà compromis, ni à du code Python arbitraire exécuté dans le même processus ; l'instrumentation et les guards ne constituent pas un bac à sable.
+- `adapters.run_tool()` est désormais instrumenté, mais `subprocess`, `socket`, `urllib` et `rusqlite` restent appelables directement par du code arbitraire dans le même processus. Le verrou Rust `gate::require()` empêche un appel accidentel avant `AUTH_OK`, mais un code injecté peut appeler `gate::authorize()` ou modifier le binaire ; cette limite reste hors du modèle de menace.
+- La vérification UDP s'arrête au socket lié et, au mieux, au processus : aucune réponse applicative n'est envoyée, donc `application_verified` reste faux.
+- `sshd -T` complet et le processus d'un socket d'un autre utilisateur exigent des privilèges.
+- Les résultats OSV/NVD restent `to_verify` tant que le correctif de distribution n'est pas vérifié.
+
 ## [0.6.0-beta.2] — Auth Gate Hardening
 
 ### Fixed

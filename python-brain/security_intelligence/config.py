@@ -8,8 +8,10 @@ base ailleurs dans le système.
 import ipaddress
 import json
 import os
+import subprocess
 from pathlib import Path
 
+import authz
 from security_intelligence import VERSION
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -17,10 +19,71 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG = PROJECT_ROOT / "config" / "security_intelligence.json"
 
 DATA_ROOT = (PROJECT_ROOT / "data").resolve()
+DEFAULT_GATEWAY = "default_gateway"
+PRIVATE_IPV4_NETWORKS = tuple(
+    ipaddress.ip_network(network)
+    for network in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
+)
 
 
 class ConfigError(ValueError):
     """Configuration absente, illisible ou hors des bornes autorisées."""
+
+
+def parse_default_gateway(output):
+    """Parse une route IPv4 par défaut unique vers une passerelle privée."""
+
+    routes = [line.split() for line in output.splitlines() if line.strip()]
+
+    if len(routes) != 1 or not routes[0] or routes[0][0] != "default":
+        raise ConfigError("une route IPv4 par défaut unique est requise")
+
+    via_indices = [index for index, field in enumerate(routes[0]) if field == "via"]
+
+    if len(via_indices) != 1 or via_indices[0] + 1 >= len(routes[0]):
+        raise ConfigError("la route IPv4 par défaut ne désigne pas une passerelle unique")
+
+    gateway = routes[0][via_indices[0] + 1]
+
+    try:
+        address = ipaddress.ip_address(gateway)
+    except ValueError as error:
+        raise ConfigError("adresse de passerelle IPv4 invalide") from error
+
+    if (
+        not isinstance(address, ipaddress.IPv4Address)
+        or not any(address in network for network in PRIVATE_IPV4_NETWORKS)
+        or address.is_loopback
+        or address.is_link_local
+    ):
+        raise ConfigError("la passerelle doit être une adresse IPv4 privée RFC1918")
+
+    return str(address)
+
+
+def resolve_default_gateway():
+    """Résout la passerelle locale sans conserver son adresse dans le dépôt."""
+
+    # `ip` est une commande : elle exige le même jeton que les autres puits.
+    authz.require()
+
+    try:
+        result = subprocess.run(
+            ["ip", "-4", "route", "show", "default"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise ConfigError(
+            "impossible de lire la route IPv4 par défaut avec `ip route`"
+        ) from error
+
+    if result.returncode != 0:
+        raise ConfigError("la commande `ip -4 route show default` a échoué")
+
+    return parse_default_gateway(result.stdout)
 
 
 def _bounded_int(value, default, minimum, maximum, name):
@@ -79,16 +142,24 @@ def _data_path(value, default, name):
 
 
 def normalize_targets(values):
-    """Valide une liste blanche : IP littérales et `localhost` uniquement."""
+    """Valide une liste blanche d'IP littérales ou la passerelle par défaut."""
 
     if not isinstance(values, list) or not values:
         raise ConfigError("authorized_targets doit être une liste non vide")
 
+    normalized_values = [str(value).strip() for value in values]
+
+    if DEFAULT_GATEWAY in normalized_values:
+        if normalized_values != [DEFAULT_GATEWAY]:
+            raise ConfigError(
+                "default_gateway doit être l'unique cible autorisée"
+            )
+
+        return [DEFAULT_GATEWAY]
+
     targets = []
 
-    for value in values:
-        text = str(value).strip()
-
+    for text in normalized_values:
         if not text:
             continue
 
@@ -101,7 +172,8 @@ def normalize_targets(values):
             ipaddress.ip_address(text)
         except ValueError as error:
             raise ConfigError(
-                f"cible autorisée invalide (IP littérale ou localhost requise): {text}"
+                f"cible autorisée invalide "
+                f"(IP littérale ou localhost requise): {text}"
             ) from error
 
         if text not in targets:
@@ -121,6 +193,12 @@ def resolve_target(target, allowed):
 
     if not text:
         raise PermissionError("cible vide refusée")
+
+    if permitted == {DEFAULT_GATEWAY}:
+        gateway = resolve_default_gateway()
+
+        if text in (DEFAULT_GATEWAY, gateway):
+            return [gateway]
 
     if text not in permitted:
         raise PermissionError(

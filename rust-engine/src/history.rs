@@ -181,6 +181,9 @@ pub fn init_db(root: &Path) -> Result<Connection> {
 
 /// Ouvre la base dans un répertoire donné, en propageant toute erreur.
 pub fn init_db_in(dir: &Path) -> Result<Connection> {
+    crate::gate::require()
+        .expect("ouverture SQLite refusée sans autorisation");
+
     fs::create_dir_all(dir)?;
 
     let conn = Connection::open(dir.join("nour_sentinel.db"))?;
@@ -259,6 +262,9 @@ fn validate_event(ip: &str, port: u16, state: &str) -> Result<()> {
 /// Les événements sont validés avant toute écriture : en cas de donnée
 /// invalide, rien n'est enregistré et l'erreur est retournée.
 pub fn save_scan(conn: &Connection, scope: &ScanScope, report: &Value) -> Result<i64> {
+    crate::gate::require()
+        .expect("écriture SQLite refusée sans autorisation");
+
     let timestamp = Utc::now().to_rfc3339();
     let targets = scope.targets().join(",");
     let ports: Vec<String> = scope.ports().iter().map(u16::to_string).collect();

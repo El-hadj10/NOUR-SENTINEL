@@ -10,7 +10,9 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT / "python-brain"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from lab_helpers import AuthorizedTestCase
 from security_intelligence.tls import analyzer
 
 
@@ -47,7 +49,7 @@ class TestCertificateParsing(unittest.TestCase):
         self.assertIn("tls.self_signed", checks)
 
 
-class TestTlsAudit(unittest.TestCase):
+class TestTlsAudit(AuthorizedTestCase):
     def test_target_outside_whitelist_is_refused(self):
         findings, metadata, errors = analyzer.audit(
             "10.0.0.1", 443, allowed=("127.0.0.1",)

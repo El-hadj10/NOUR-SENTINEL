@@ -19,7 +19,9 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+import authz
 from intelligence.models import make_finding
+from security_intelligence import collection_trace
 from security_intelligence.reports import ensure_private_directory
 
 OSV_URL = "https://api.osv.dev/v1/query"
@@ -29,7 +31,7 @@ KEV_URL = (
     "known_exploited_vulnerabilities.json"
 )
 EPSS_URL = "https://api.first.org/data/v1/epss"
-USER_AGENT = "NOUR-SENTINEL-LAB/0.6.0-beta.2 (defensive audit)"
+USER_AGENT = "NOUR-SENTINEL-LAB/0.6.0-beta.3 (defensive audit)"
 
 SEVERITY_MAP = {
     "CRITICAL": "critical",
@@ -57,6 +59,7 @@ class UrllibTransport:
     def __init__(self, max_bytes=2_000_000):
         self.max_bytes = max_bytes
 
+    @collection_trace.instrument("external", "online.UrllibTransport.fetch")
     def fetch(self, method, url, body=None, headers=None, timeout=10.0):
         class _NoRedirect(urllib.request.HTTPRedirectHandler):
             def redirect_request(self, req, fp, code, msg, response_headers, newurl):
@@ -257,7 +260,9 @@ class OnlineIntel:
         self.transport = transport or UrllibTransport()
         self.budget = budget or Budget(int(options.get("max_requests") or 20))
 
+    @collection_trace.instrument("external", "online._json")
     def _json(self, method, url, body=None, headers=None):
+        authz.require()
         key = f"{method} {url} {body.decode('utf-8') if body else ''}"
         cached = self.cache.get(key)
 
@@ -283,6 +288,7 @@ class OnlineIntel:
 
         return data
 
+    @collection_trace.instrument("external", "online.query_osv")
     def query_osv(self, package, version, ecosystem="Debian"):
         body = json.dumps(
             {
@@ -303,6 +309,7 @@ class OnlineIntel:
 
         return data.get("vulns") or []
 
+    @collection_trace.instrument("external", "online.nvd_keyword")
     def nvd_keyword(self, keyword, limit=10):
         params = urllib.parse.urlencode(
             {"keywordSearch": str(keyword), "resultsPerPage": str(int(limit))}
@@ -317,6 +324,7 @@ class OnlineIntel:
 
         return data.get("vulnerabilities") or []
 
+    @collection_trace.instrument("external", "online.kev_catalog")
     def kev_catalog(self):
         data = self._json(
             "GET", KEV_URL, headers={"User-Agent": USER_AGENT}
@@ -328,6 +336,7 @@ class OnlineIntel:
             if item.get("cveID")
         }
 
+    @collection_trace.instrument("external", "online.epss_scores")
     def epss_scores(self, cves):
         scores = {}
         ordered = sorted({str(cve).upper() for cve in cves if cve})
@@ -347,6 +356,7 @@ class OnlineIntel:
 
         return scores
 
+    @collection_trace.instrument("external", "online.nvd_findings")
     def nvd_findings(self, host, keyword, limit=10):
         findings = []
 
@@ -408,6 +418,7 @@ class OnlineIntel:
 
         return findings
 
+    @collection_trace.instrument("external", "online.assess_packages")
     def assess_packages(self, host, packages, limit=10, ecosystem="Debian"):
         """Interroge OSV pour des paquets, puis ajoute KEV et EPSS connus."""
 

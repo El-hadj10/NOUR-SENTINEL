@@ -8,7 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT / "python-brain"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from lab_helpers import make_config, write_private
+from lab_helpers import AuthorizedTestCase, make_config, write_private
 from security_intelligence.passwords import policy
 
 
@@ -29,7 +29,7 @@ def sshd_runner(rc=0):
     return runner
 
 
-class TestSshdEffective(unittest.TestCase):
+class TestSshdEffective(AuthorizedTestCase):
     def test_parses_effective_directives(self):
         directives = policy.parse_sshd_effective(
             "permitrootlogin no\npasswordauthentication yes\n"
@@ -51,7 +51,7 @@ class TestSshdEffective(unittest.TestCase):
         self.assertIn("sshd -T", error)
 
 
-class TestPamPolicy(unittest.TestCase):
+class TestPamPolicy(AuthorizedTestCase):
     def test_parses_pam_options(self):
         parsed = policy.parse_pam_common_password(
             "password requisite pam_pwquality.so retry=3 minlen=8\n"
@@ -86,7 +86,7 @@ class TestPamPolicy(unittest.TestCase):
             login_defs = Path(directory) / "login.defs"
             pam = Path(directory) / "common-password"
 
-            login_defs.write_text("PASS_MAX_DAYS 99999\n", encoding="utf-8")
+            login_defs.write_text("PASS_MAX_DAYS 30\n", encoding="utf-8")
             pam.write_text(
                 "password requisite pam_pwquality.so minlen=8\n",
                 encoding="utf-8",
@@ -104,7 +104,7 @@ class TestPamPolicy(unittest.TestCase):
             self.assertTrue(metadata["login_defs"])
             self.assertTrue(metadata["pam"])
             self.assertIn("ssh_policy.root_login", checks)
-            self.assertIn("password_policy.password_expiration", checks)
+            self.assertIn("password_policy.password_rotation", checks)
             self.assertIn("password_policy.pam_min_length", checks)
             self.assertEqual(errors, [])
 

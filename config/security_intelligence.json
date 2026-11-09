@@ -1,12 +1,11 @@
 {
     "application": {
         "name": "NOUR SENTINEL LAB",
-        "version": "0.6.0-beta.2",
+        "version": "0.6.0-beta.3",
         "environment": "lab"
     },
     "authorized_targets": [
-        "127.0.0.1",
-        "localhost"
+        "default_gateway"
     ],
     "timeout": 2.0,
     "max_response_bytes": 65536,

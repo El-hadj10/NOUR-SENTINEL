@@ -6,8 +6,10 @@
 
 from pathlib import Path
 
+import authz
 from intelligence.models import make_finding
 from intelligence.passwords import policy_audit
+from security_intelligence import collection_trace
 from security_intelligence.fingerprinting.inventory import run_command
 
 SSHD_CONFIG = "/etc/ssh/sshd_config"
@@ -34,9 +36,11 @@ def parse_sshd_effective(text):
     return directives
 
 
+@collection_trace.instrument("system", "policy.read_effective_sshd")
 def read_effective_sshd(config_path=None, runner=None):
     """Retourne `(directives, erreur)` depuis `sshd -T`."""
 
+    authz.require()
     runner = runner or run_command
     argv = ["sshd", "-T"]
 
@@ -206,9 +210,11 @@ def audit_pam(text, asset="localhost", exposure="local"):
     return findings
 
 
+@collection_trace.instrument("system", "policy.collect")
 def collect(config, host, exposure="local", runner=None):
     """Collecte SSH effectif, login.defs et PAM ; retourne findings/meta/errors."""
 
+    authz.require()
     findings = []
     errors = []
     metadata = {

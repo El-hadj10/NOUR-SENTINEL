@@ -17,6 +17,7 @@ import xml.etree.ElementTree as ElementTree
 from pathlib import Path
 
 from intelligence.models import make_finding
+from security_intelligence import collection_trace
 
 EXECUTABLES = {"nmap": "nmap", "testssl": "testssl.sh", "trivy": "trivy"}
 
@@ -80,6 +81,7 @@ def build_trivy_fs_command(path):
     ]
 
 
+@collection_trace.instrument("tool", "adapters.run_tool")
 def run_tool(argv, timeout=120):
     """Exécute un outil sans shell. Ne lève jamais pour un code non nul."""
 
