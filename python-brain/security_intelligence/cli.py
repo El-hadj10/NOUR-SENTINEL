@@ -13,6 +13,7 @@ from security_intelligence import (
     VERSION,
     auth_gate,
     config as config_module,
+    dashboard,
     lab,
     network_scan,
     profiles,
@@ -89,12 +90,30 @@ def build_parser():
     cve.add_argument("--package")
     cve.add_argument("--version")
 
+    board = commands.add_parser(
+        "dashboard",
+        help="tableau de bord local 127.0.0.1 (options, rapport, ondes réseau)",
+    )
+    board.add_argument(
+        "--port",
+        type=int,
+        default=dashboard.DEFAULT_PORT,
+        help=f"port d'écoute sur 127.0.0.1 (défaut: {dashboard.DEFAULT_PORT})",
+    )
+
     return parser
 
 
 def _validate_port(port):
     if not isinstance(port, int) or isinstance(port, bool) or not 1 <= port <= 65535:
         raise ValueError("port TCP invalide (1-65535)")
+
+    return port
+
+
+def _validate_dashboard_port(port):
+    if not isinstance(port, int) or isinstance(port, bool) or not 1 <= port <= 65535:
+        raise ValueError("port de tableau de bord invalide (1-65535)")
 
     return port
 
@@ -173,6 +192,12 @@ def main(argv=None):
         # Auth directe avant toute commande et avant la configuration.
         auth_gate.authenticate()
         config = config_module.load_config()
+
+        # Le tableau de bord bloque jusqu'à Ctrl+C : il prend la main avant la
+        # sortie JSON du CLI et reste dans ce thread, seul autorisé par authz.
+        if args.command == "dashboard":
+            return dashboard.serve(config, port=_validate_dashboard_port(args.port))
+
         report = run(args, config)
     except auth_gate.AuthError as error:
         print(f"[AUTH ERROR] {error}", file=sys.stderr)

@@ -1,5 +1,22 @@
 # NOUR SENTINEL — Changelog
 
+## [Unreleased] — Tableau de bord local
+
+### Added
+- Commande `dashboard` (`--intel dashboard [--port 8765]`) : interface web locale servie sur `127.0.0.1` uniquement, sans aucune dépendance externe (`http.server` de la bibliothèque standard).
+- Jeton de session aléatoire placé dans le fragment d'URL et transmis en en-tête `X-Nour-Token` : aucune route API ne répond sans lui, aucun en-tête n'est journalisé et le jeton n'apparaît jamais dans le HTML servi.
+- Panneau d'options (inventaire, audit local complet, voisins ARP, sondes bornées, empreinte de service, TLS, CVE) réutilisant les fonctions `lab`/`network_scan` existantes, avec cible, port, protocole, profil et confirmation explicite.
+- Ondes de trafic en temps réel : deltas par seconde calculés depuis `/proc/net/dev`, boucle locale exclue du total, historique en mémoire de 120 échantillons.
+- Rapport détaillé sous les ondes : résumé, `risk_summary`, constats avec preuve et recommandation, voisins ARP, ports par protocole, limites appliquées, erreurs explicites et JSON brut.
+- Débit par interface sous les ondes : interfaces actives uniquement, triées par trafic décroissant (6 au plus), boucle locale exclue, mention explicite quand aucune ne bouge.
+- En-têtes `Content-Security-Policy`, `Referrer-Policy`, `X-Content-Type-Options`, contrôle `Host`/`Origin`, refus des routes inconnues et des corps supérieurs à 8 Kio.
+- 22 tests dédiés : jeton obligatoire, origine croisée, confirmation `scan`, port invalide, refus sans authentification, calcul des débits et remise à zéro des compteurs.
+
+### Changed
+- L'exécution des capacités a lieu dans le thread principal, seul à détenir l'autorisation `authz` ; les handlers HTTP ne collectent jamais eux-mêmes.
+- La sortie JSON du CLI reste inchangée : `dashboard` est la seule commande qui bloque (Ctrl+C) au lieu d'écrire un rapport.
+- Cliquer une option ne collecte rien : la sélection est distincte de l'exécution, déclenchée par le bouton « Exécuter ».
+
 ## [0.6.0-beta.3] — Entry Point Hardening
 
 ### Fixed

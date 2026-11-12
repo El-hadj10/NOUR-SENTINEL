@@ -77,6 +77,7 @@ Chaque constat porte `finding_id`, `evidence`, `confidence`,
 GATEWAY="$(ip -4 route show default | awk '$1 == "default" && $2 == "via" {print $3}')"
 ./lancer-nour-sentinel.sh --intel tls --target "$GATEWAY" --port 8443
 ./lancer-nour-sentinel.sh --intel cve --online
+./lancer-nour-sentinel.sh --intel dashboard   # puis ouvrir l'URL affichée
 ```
 
 - Rust démarre le cerveau Python avant toute configuration ; `main.py`
@@ -99,6 +100,13 @@ GATEWAY="$(ip -4 route show default | awk '$1 == "default" && $2 == "via" {print
   `full-local` ne lance aucun réseau.
 - Rapports JSON en 0600 sous `data/reports/`, base
   `data/history/nour_sentinel_intel.db`, dossiers en 0700.
+- `--intel dashboard` sert une interface locale sur `127.0.0.1` : un jeton de
+  session dans le fragment d'URL, un panneau de boutons qui sélectionnent une
+  capacité du laboratoire (rien n'est collecté avant le clic sur « Exécuter »),
+  les ondes du trafic réel lues dans `/proc/net/dev` avec le débit de chaque
+  interface trié par activité, et le rapport détaillé de l'option lancée, sous
+  les ondes. Aucun accès hors de la boucle locale, et aucun garde-fou levé :
+  confirmation, liste blanche et plafond de 32 ports s'appliquent à l'identique.
 - OSV/NVD/KEV/EPSS ne sont jamais appelés implicitement : `--online` est
   requis, avec cache et budget de requêtes.
 
@@ -232,15 +240,16 @@ La base se trouve par défaut dans `data/history/nour_sentinel.db`.
 
 ```bash
 cargo test --manifest-path rust-engine/Cargo.toml   # 52 tests unitaires Rust
-.venv/bin/python -m unittest discover -s tests/python # 231 tests Python (lab complet)
+.venv/bin/python -m unittest discover -s tests/python # 253 tests Python (lab complet)
 .venv/bin/python -m unittest discover -s tests/integration # 11 tests d'intégration
 ```
 
 Les tests n'ouvrent aucune connexion externe : fixtures pour `nmap`,
 `testssl.sh`, `trivy`, journald, Docker, OSV/NVD/KEV/EPSS ; serveurs locaux
 éphémères pour SSH, HTTP et TLS ; historique, rapports et configuration
-temporaires. Le venv complet exécute les 231 tests ; sans `argon2-cffi`, les
-30 tests d'authentification sont ignorés.
+temporaires. Le venv complet exécute les 253 tests ; sans `argon2-cffi`, les
+30 tests d'authentification sont ignorés. Le tableau de bord est couvert par
+22 tests dédiés (jeton, origine, confirmation, débits).
 
 ## Sécurité
 

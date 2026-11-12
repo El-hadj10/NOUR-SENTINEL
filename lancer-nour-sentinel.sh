@@ -32,6 +32,7 @@ Utilisation :
   ./lancer-nour-sentinel.sh --intel tls --target 127.0.0.1 --port 8443
   ./lancer-nour-sentinel.sh --intel fingerprint --target 127.0.0.1 --port 22 --protocol ssh
   ./lancer-nour-sentinel.sh --intel cve --online
+  ./lancer-nour-sentinel.sh --intel dashboard [--port 8765]
   ./lancer-nour-sentinel.sh --help
   ./lancer-nour-sentinel.sh --version
 

@@ -43,7 +43,8 @@ lancer-nour-sentinel.sh
     ├── full-local                      + sshd -T, PAM, journald, Docker
     ├── fingerprint --protocol ssh|http sonde unique autorisée
     ├── tls --target --port             TLS 1.2/1.3 + certificat
-    └── cve --online                    OSV, NVD, KEV, EPSS (explicite)
+    ├── cve --online                    OSV, NVD, KEV, EPSS (explicite)
+    └── dashboard                       interface locale + ondes /proc/net/dev
         └── risk_engine (v0.5.0)
             ├── rapport JSON 0600 sous data/reports/
             └── SQLite data/history/nour_sentinel_intel.db
@@ -59,6 +60,7 @@ lancer-nour-sentinel.sh
 | Inventory | `fingerprinting/inventory.py` | OS, dpkg/rpm, systemd, `ss` |
 | Sondes | `fingerprinting/service_probe.py` | Bannière SSH, HEAD HTTP |
 | Profils | `python-brain/security_intelligence/profiles.py` | Dictionnaire `passif`/`standard`/`agressif` : ports, timeout, concurrence |
+| Tableau de bord | `security_intelligence/dashboard.py` + `web/` | Serveur `127.0.0.1`, jeton de session, ondes `/proc/net/dev`, rapport |
 | TLS | `tls/analyzer.py` | Négociations 1.2/1.3, certificat OpenSSL |
 | Politiques | `passwords/policy.py` | `sshd -T`, `login.defs`, PAM |
 | Journald | `intrusion/journal.py` | Indicateurs agrégés, aucun log brut |
@@ -215,6 +217,44 @@ sur les ports du profil. Les commandes actives seulement sont concernées :
 - `cve --online` : OSV par paquet, NVD par mots-clés, KEV et EPSS. Sans
   `--online`, aucun appel externe n'est effectué.
 
+### Tableau de bord local
+
+`--intel dashboard [--port 8765]` sert une page unique sur `127.0.0.1`, après
+l'Auth Gate. Ce n'est pas une seconde porte d'entrée : le processus a déjà
+vérifié Argon2id, le serveur ne répond qu'à `Host` loopback, aucune route API
+n'existe sans le jeton de session affiché au lancement, et chaque option
+déclenche, après le clic sur « Exécuter », une fonction `lab`/`network_scan`
+déjà instrumentée.
+
+| Zone | Contenu |
+|---|---|
+| Panneau gauche | Boutons d'options (sélection seule), cible, port, protocole, profil, confirmation, bouton « Exécuter » |
+| Colonne droite, haut | Ondes du trafic réel (deltas de `/proc/net/dev`, boucle locale exclue) et débit de chaque interface, triées par trafic décroissant, 6 au plus |
+| Colonne droite, bas | Rapport détaillé sous les ondes : résumé, `risk_summary`, constats, ports, erreurs, JSON |
+
+Règles appliquées :
+
+- Sélection et exécution sont séparées : cliquer un bouton d'option ne
+  collecte rien, seul « Exécuter » met la capacité en file.
+- Le panneau des ondes n'affiche que les interfaces qui bougent (boucle locale
+  exclue), par débit décroissant : les interfaces virtuelles inactives
+  (`docker0`, `veth…`, ponts) ne masquent pas celle qui porte le trafic. Sans
+  activité, une mention l'indique au lieu de chips vides.
+- Jeton `secrets.token_urlsafe(24)` dans le fragment d'URL, envoyé en en-tête
+  `X-Nour-Token` ; il n'est ni dans l'URL des requêtes, ni journalisé, ni dans
+  le HTML servi.
+- Contrôle `Host` et `Origin`, `Content-Security-Policy` restrictive,
+  `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, corps
+  limité à 8 Kio, routes inconnues refusées.
+- Les capacités s'exécutent dans le thread principal, le seul à détenir le
+  jeton `authz` : les handlers HTTP mettent en file et attendent, ils ne
+  collectent jamais eux-mêmes.
+- `scan` exige la case de confirmation côté page **et** `confirm=true` côté
+  serveur ; `cve` exige l'accès en ligne explicite. Ni le profil, ni le
+  tableau de bord ne lèvent la liste blanche ou le plafond de 32 ports.
+- Le rapport produit reste identique à celui du CLI : même JSON, même fichier
+  0600 sous `data/reports/`, même enregistrement SQLite.
+
 ## 5. Liste blanche réseau
 
 `config/security_intelligence.json` conserve le marqueur `default_gateway`,
@@ -276,8 +316,9 @@ systemd 259, Docker 29, `dpkg`, `ss`.
 | Contrôle | Résultat |
 |---|---|
 | Rust (`cargo test`) | **52/52** (7 scanner, 20 historique, 17 inventaire, 2 auth, 3 gate, 2 gateway, 1 versions) |
-| Python, venv complet | **231/231** |
+| Python, venv complet | **253/253** |
 | Intégration | **11/11** : 7 pipeline (dont refus direct) + 4 E2E PTY |
+| Tableau de bord | **22/22** : jeton obligatoire, origine croisée, confirmation `scan`, port invalide, refus sans authentification, débits et remise à zéro des compteurs |
 | E2E PTY | pipeline complet, persistance deux scans, mauvais secret verrouillé |
 | Ancien `session.json` forgé | ignoré : l'invite Argon2id reste obligatoire |
 | `bash -n lancer-nour-sentinel.sh` | réussi |
@@ -355,6 +396,8 @@ explicitement hors périmètre.
   liste blanche ou le plafond de 32 ports par protocole.
 - Une sévérité haute ou critique sans preuve reste plafonnée par le modèle
   v0.5.0.
+- Le tableau de bord n'écoute que sur `127.0.0.1`, n'ouvre aucune route sans
+  son jeton de session et ne lève aucun des garde-fous ci-dessus.
 
 ## 10. Installation sur Kali Linux
 

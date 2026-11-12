@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NOUR SENTINEL — Tableau de bord</title>
+<link rel="stylesheet" href="/dashboard.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true">◉</span>
+    <div class="brand-text">
+      <h1>NOUR SENTINEL</h1>
+      <p class="sub">tableau de bord local · <span id="versions">chargement…</span></p>
+    </div>
+  </div>
+  <div class="status">
+    <span id="dot" class="dot idle" aria-hidden="true"></span>
+    <span id="status-text">initialisation…</span>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="panel">
+    <h2 class="panel-title">Options</h2>
+    <div id="options" class="options" role="group" aria-label="Options du laboratoire"></div>
+
+    <form id="params" class="params" autocomplete="off">
+      <div class="field" data-for="target">
+        <label for="target">Cible autorisée</label>
+        <input id="target" name="target" maxlength="64" placeholder="192.168.1.1 ou localhost">
+      </div>
+
+      <div class="field" data-for="port">
+        <label for="port">Port</label>
+        <input id="port" name="port" type="number" min="1" max="65535" placeholder="443">
+      </div>
+
+      <div class="field" data-for="protocol">
+        <label for="protocol">Protocole</label>
+        <select id="protocol" name="protocol"></select>
+      </div>
+
+      <div class="field" data-for="profile">
+        <label for="profile">Profil de sondes</label>
+        <select id="profile" name="profile"></select>
+        <p id="profile-hint" class="hint"></p>
+      </div>
+
+      <div class="field" data-for="package">
+        <label for="package">Paquet (optionnel)</label>
+        <input id="package" name="package" maxlength="64" placeholder="openssl">
+      </div>
+
+      <div class="field" data-for="version">
+        <label for="version">Version du paquet</label>
+        <input id="version" name="version" maxlength="64" placeholder="3.0.2">
+      </div>
+
+      <label class="check" data-for="confirm">
+        <input id="confirm" type="checkbox">
+        <span>J'atteste être autorisé à sonder cette cible.</span>
+      </label>
+    </form>
+
+    <button id="run" class="run" type="button">Exécuter</button>
+    <p class="panel-note">
+      Chaque option appelle une capacité existante du laboratoire. Le tableau de
+      bord ne lève ni la liste blanche, ni la confirmation, ni le plafond de
+      32 ports par protocole.
+    </p>
+  </aside>
+
+  <section class="stage">
+    <div class="waves-card">
+      <div class="waves-head">
+        <h2>Ondes réseau temps réel</h2>
+        <div class="rates">
+          <span>↓ <b id="rx">0</b> o/s</span>
+          <span>↑ <b id="tx">0</b> o/s</span>
+          <span>pkt/s <b id="pps">0</b></span>
+        </div>
+      </div>
+      <canvas id="waves" height="260" aria-label="Ondes de trafic réseau"></canvas>
+      <div id="ifaces" class="ifaces"></div>
+    </div>
+
+    <section class="report-card">
+  <div class="report-head">
+    <h2>Rapport détaillé</h2>
+    <div class="report-tools">
+      <span id="report-mode" class="chip">aucune option exécutée</span>
+      <button id="copy" class="ghost" type="button">copier JSON</button>
+      <button id="clear" class="ghost" type="button">effacer</button>
+    </div>
+  </div>
+  <div id="report" class="report">
+    <p class="empty">Sélectionnez une option à gauche, puis lancez-la : le rapport complet apparaîtra ici.</p>
+  </div>
+    </section>
+  </section>
+</main>
+
+<footer class="foot">
+  <span>127.0.0.1 uniquement · jeton de session dans l'URL</span>
+  <span>aucune exploitation, aucun brute force, aucune remédiation automatique</span>
+</footer>
+
+<script src="/dashboard.js"></script>
+</body>
+</html>
