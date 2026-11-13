@@ -93,7 +93,7 @@ class TestRustPythonPipeline(unittest.TestCase):
         self.assertEqual(report["engine"], "NOUR SENTINEL")
         self.assertEqual(report["version"], "0.5.0")
         self.assertEqual(report["core_version"], "0.5.0")
-        self.assertEqual(report["lab_version"], "0.6.0-beta.3")
+        self.assertEqual(report["lab_version"], "0.6.0-beta.4")
         self.assertEqual(report["protocol_version"], "3.0")
         self.assertEqual(report["source"], "rust-network-engine")
         self.assertEqual(report["status"], "analysis_completed")

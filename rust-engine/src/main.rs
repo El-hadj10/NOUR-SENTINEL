@@ -218,7 +218,7 @@ fn run() -> Result<(), String> {
         .to_path_buf();
 
     // Le processus Python est démarré AVANT toute configuration, lecture ARP
-    // ou tentative TCP (0.6.0-beta.3). Il exécute l'Auth Gate Argon2id et
+    // ou tentative TCP (0.6.0-beta.4). Il exécute l'Auth Gate Argon2id et
     // n'émet AUTH_OK qu'après succès ; aucune collecte ne commence avant.
     let python = auth::ensure_interpreter(&root)?;
     let python_script = root.join("python-brain/main.py");

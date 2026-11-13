@@ -31,7 +31,7 @@ KEV_URL = (
     "known_exploited_vulnerabilities.json"
 )
 EPSS_URL = "https://api.first.org/data/v1/epss"
-USER_AGENT = "NOUR-SENTINEL-LAB/0.6.0-beta.3 (defensive audit)"
+USER_AGENT = "NOUR-SENTINEL-LAB/0.6.0-beta.4 (defensive audit)"
 
 SEVERITY_MAP = {
     "CRITICAL": "critical",

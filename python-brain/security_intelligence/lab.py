@@ -1,4 +1,4 @@
-"""Orchestration du laboratoire 0.6.0-beta.3.
+"""Orchestration du laboratoire 0.6.0-beta.4.
 
 Chaque exécution produit un rapport normalisé, l'écrit en 0600 sous
 `data/reports/` et l'enregistre dans la base d'intelligence.

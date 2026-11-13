@@ -571,7 +571,7 @@ def main(argv=None):
         prog="auth_gate",
         description="Authentification propriétaire NOUR SENTINEL (Argon2id).",
     )
-    parser.add_argument("--version", action="version", version="0.6.0-beta.3")
+    parser.add_argument("--version", action="version", version="0.6.0-beta.4")
 
     commands = parser.add_subparsers(dest="command", required=True)
 

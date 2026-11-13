@@ -129,6 +129,15 @@ Reste pour les itérations suivantes : vérification des correctifs de
 distribution, preuves multi-distributions, schéma stable, exécution contrôlée
 de testssl.sh/nmap et corrélation actif → version → CVE → KEV/EPSS.
 
+## VERSION 0.6.0-beta.4 — Tableau de bord local
+
+- [x] Commande `dashboard [--port 8765]`, serveur `http.server` lié à `127.0.0.1`, sans dépendance externe.
+- [x] Jeton de session en fragment d'URL, en-tête `X-Nour-Token`, contrôle `Host`/`Origin`, CSP, corps limité à 8 Kio.
+- [x] Panneau d'options en boutons, exécution explicite par « Exécuter », rapport détaillé sous les ondes.
+- [x] Ondes du trafic réel : `/proc/net/dev`, boucle locale exclue, débits par interface triés par activité.
+- [x] Garde-fous inchangés : confirmation, liste blanche et plafond de 32 ports par protocole.
+- [x] 253 tests Python (dont 22 dédiés au tableau de bord), 11 tests d'intégration, 52 tests Rust.
+
 ## VERSION 0.6.0 — Fusion stable
 
 - [ ] Rebaser le laboratoire sur v0.5.0 et intégrer par lots.

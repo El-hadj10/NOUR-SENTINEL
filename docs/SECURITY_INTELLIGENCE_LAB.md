@@ -1,13 +1,13 @@
-# NOUR SENTINEL LAB — 0.6.0-beta.3
+# NOUR SENTINEL LAB — 0.6.0-beta.4
 
 ## 1. Statut et provenance
 
 - **Ligne stable de référence** : NOUR SENTINEL v0.5.0 (Security Intelligence).
-- **Laboratoire** : 0.6.0-beta.3, couche additive au-dessus des moteurs v0.5.0
+- **Laboratoire** : 0.6.0-beta.4, couche additive au-dessus des moteurs v0.5.0
   présents dans l'arborescence.
-- **Branche de cette itération** : `feature/security-intelligence-lab-beta2`.
-- **Tag** : aucun nouveau tag dans cette étape ; `v0.6.0-beta.2` reste le
-  dernier tag et n'est pas déplacé.
+- **Branche de cette itération** : `release/v0.6.0-beta.3`.
+- **Tag** : `v0.6.0-beta.4` (tableau de bord local) ; `v0.6.0-beta.3`, `v0.6.0-beta.2`
+  et les tags précédents ne sont pas déplacés.
 - **Fusion** : non effectuée ; rebasage et audit complets requis avant
   intégration. Aucun historique réécrit.
 
@@ -334,7 +334,7 @@ systemd 259, Docker 29, `dpkg`, `ss`.
 | `verify()` | même compteur, même verrou et même remise à zéro qu'`authenticate()` |
 | UDP/UDP6 | socket lié, processus identifié, application identifiée et réponse vérifiée sont des champs distincts ; `application_verified` reste faux sans réponse |
 | `PASS_MAX_DAYS` | 99999 accepté, rotation < 90 j signalée, valeur illisible `to_verify` ; seuil contextuel documenté (PCI DSS 8.3.9, NIST SP 800-63B) |
-| Versions | `core_version` 0.5.0, `lab_version` 0.6.0-beta.3, `protocol_version` 3.0 ; `version`/`base_version` conservés |
+| Versions | `core_version` 0.5.0, `lab_version` 0.6.0-beta.4, `protocol_version` 3.0 ; `version`/`base_version` conservés |
 | Frontière Rust | `gate::require()` actif dans `scanner::*`/`history::*` ; binaire compilé sans le contournement de test |
 | Compteur persistant | 6 processus concurrents : 3 échecs comptés, 3 refus sans perte |
 | `verify()` verrouillé | refus pendant le verrou, compteur inchangé, aucun contournement |
@@ -435,6 +435,7 @@ bash -n lancer-nour-sentinel.sh
 | 0.6.0-beta.3 | Fermer les entrées Python directes | jeton mémoire, handshake, tests de refus |
 | 0.6.0-beta.3 | Profils d'agressivité des sondes | dictionnaire borné, garde-fous inchangés |
 | 0.6.0-beta.3 | Durcissement CVE/TLS et corrélation | preuves, faux positifs, actif → CVE |
+| 0.6.0-beta.4 | Tableau de bord local | serveur `127.0.0.1`, jeton, ondes, 22/22 |
 | Fusion | Rebaser sur v0.5.0 puis intégrer par lots | audit complet, tests E2E, revue sécurité |
 
 ## 12. Références
@@ -449,4 +450,4 @@ bash -n lancer-nour-sentinel.sh
 
 ---
 
-**NOUR SENTINEL LAB — dossier de livraison 0.6.0-beta.3**
+**NOUR SENTINEL LAB — dossier de livraison 0.6.0-beta.4**

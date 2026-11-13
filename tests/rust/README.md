@@ -3,7 +3,7 @@
 ## Objectif
 
 Vérifier la fiabilité du moteur Rust : scanner TCP, couche d'historique SQLite,
-inventaire local des sockets et interpréteur Python déterministe (0.6.0-beta.3).
+inventaire local des sockets et interpréteur Python déterministe (0.6.0-beta.4).
 
 ## Emplacement des tests
 
@@ -97,7 +97,7 @@ par les tests Python et les E2E PTY.
 cargo test --manifest-path rust-engine/Cargo.toml
 ```
 
-## Résultat validé — 0.6.0-beta.3
+## Résultat validé — 0.6.0-beta.4
 
 - 50 tests exécutés (7 scanner, 20 historique, 17 inventaire, 2 auth, 3 gate, 1 versions).
 - 50 tests réussis, 0 échec.

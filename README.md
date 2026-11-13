@@ -14,7 +14,7 @@ combinant Rust, Python et SQLite.
 
 Les rapports exposent trois versions distinctes, additives aux champs
 historiques `version`/`base_version` : `core_version` (moteur 0.5.0),
-`lab_version` (0.6.0-beta.3) et `protocol_version` (3.0).
+`lab_version` (0.6.0-beta.4) et `protocol_version` (3.0).
 
 ## Versions
 
@@ -23,7 +23,7 @@ historiques `version`/`base_version` : `core_version` (moteur 0.5.0),
 Statut : les six capacités sont implémentées, testées hors ligne et
 documentées dans [`docs/SECURITY_INTELLIGENCE.md`](docs/SECURITY_INTELLIGENCE.md).
 
-**Laboratoire : 0.6.0-beta.3 — Security Intelligence Lab**
+**Laboratoire : 0.6.0-beta.4 — Security Intelligence Lab**
 
 Couche additive au-dessus de la v0.5.0 : authentification propriétaire
 Argon2id directe (sans session), CLI `--intel`, liste blanche locale,
@@ -46,6 +46,8 @@ Provenance :
   chaque lancement, verrou `flock`, compteur persistant et E2E PTY.
 - 0.6.0-beta.3 : entrées Python directes fermées, jeton mémoire non
   persistant et Auth Gate Python avant toute collecte Rust.
+- 0.6.0-beta.4 : tableau de bord local (`--intel dashboard`) — options en
+  boutons, ondes `/proc/net/dev` et rapport détaillé, garde-fous inchangés.
 
 ## Les six capacités
 
@@ -63,7 +65,7 @@ Chaque constat porte `finding_id`, `evidence`, `confidence`,
 `recommendation`. Une sévérité haute ou critique sans preuve est plafonnée à
 `medium` et signalée (`severity_capped`).
 
-## Laboratoire 0.6.0-beta.3
+## Laboratoire 0.6.0-beta.4
 
 ```bash
 ./lancer-nour-sentinel.sh --setup-deps   # venv + argon2-cffi

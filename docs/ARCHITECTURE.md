@@ -130,7 +130,7 @@ Le contrat JSON `3.0` transporte l'inventaire, la configuration
 `intelligence`, `tools` et le périmètre autorisé. Détail complet :
 `docs/SECURITY_INTELLIGENCE.md`.
 
-## 10. Laboratoire 0.6.0-beta.3
+## 10. Laboratoire 0.6.0-beta.4
 
 Couche additive, séparée de la ligne stable v0.5.0. Les moteurs v0.5.0
 restent la référence ; le laboratoire ajoute l'accès, le CLI et la
@@ -141,10 +141,13 @@ hash PHC, dossier 0700, fichiers 0600. Aucune session locale n'est créée,
 acceptée ou nettoyée.
 - **Stockage d'authentification** : `auth.phc`, `auth.attempts.json` et
 `auth.lock` sous `~/.config/nour-sentinel/`. Le compteur persistant verrouille
-après trois échecs (30 s, puis doublement jusqu'à 15 min).
-- **Verrou** : `auth.lock` ouvert avec `O_NOFOLLOW`, validé par `fstat` et
-protégé par `flock(LOCK_EX)` ; les fichiers sensibles sont lus de la même
-manière.
+après trois échecs (30 s, puis doublement jusqu'à 15 min).- **Verrou** : `auth.lock` ouvert avec `O_NOFOLLOW`, validé par `fstat` et
+  protégé par `flock(LOCK_EX)` ; les fichiers sensibles sont lus de la même
+  manière.
+- **Tableau de bord** (`security_intelligence/dashboard.py` + `web/`) :
+  serveur `http.server` lié à `127.0.0.1`, jeton de session en fragment
+  d'URL, ondes lues dans `/proc/net/dev`, exécution des capacités dans le
+  thread principal (seul détenteur de l'autorisation `authz`).
 - **Rust** (`auth.rs`) : interpréteur fixe `.venv/bin/python`, sans champ de
 configuration ni variable de substitution, démarrage de
 `python-brain/main.py --handshake` avant la configuration, l'ARP et le TCP.

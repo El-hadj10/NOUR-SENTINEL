@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# NOUR SENTINEL LAB 0.6.0-beta.3 — lanceur authentifié, sans session.
+# NOUR SENTINEL LAB 0.6.0-beta.4 — lanceur authentifié, sans session.
 # Aucun secret n'est stocké dans ce fichier ni dans settings.json.
 set -Eeuo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-VERSION="0.6.0-beta.3"
+VERSION="0.6.0-beta.4"
 CORE_VERSION="0.5.0"
 PROTOCOL_VERSION="3.0"
 VENV="$ROOT/.venv"
@@ -18,7 +18,7 @@ export PYTHONPATH="$ROOT/python-brain${PYTHONPATH:+:$PYTHONPATH}"
 
 usage() {
     cat <<'EOF'
-NOUR SENTINEL LAB 0.6.0-beta.3
+NOUR SENTINEL LAB 0.6.0-beta.4
 
 Utilisation :
   ./lancer-nour-sentinel.sh                  Authentification puis moteur Rust

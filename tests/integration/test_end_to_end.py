@@ -245,7 +245,7 @@ class TestEndToEnd(unittest.TestCase):
                 self.assertEqual(report["engine"], "NOUR SENTINEL")
                 self.assertEqual(report["version"], "0.5.0")
                 self.assertEqual(report["core_version"], "0.5.0")
-                self.assertEqual(report["lab_version"], "0.6.0-beta.3")
+                self.assertEqual(report["lab_version"], "0.6.0-beta.4")
                 self.assertEqual(report["protocol_version"], "3.0")
                 self.assertEqual(report["status"], "analysis_completed")
                 self.assertEqual(report["network"]["ports_observed"], 1)
@@ -270,11 +270,11 @@ class TestEndToEnd(unittest.TestCase):
                 )
 
                 self.assertIn(
-                    "core v0.5.0 / lab v0.6.0-beta.3 operational.",
+                    "core v0.5.0 / lab v0.6.0-beta.4 operational.",
                     process.stdout
                 )
                 self.assertIn("moteur (core)  : v0.5.0", process.stdout)
-                self.assertIn("laboratoire    : v0.6.0-beta.3", process.stdout)
+                self.assertIn("laboratoire    : v0.6.0-beta.4", process.stdout)
                 self.assertIn("protocole JSON : v3.0", process.stdout)
 
                 self.assertEqual(report["history"]["status"], "recorded")

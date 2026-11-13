@@ -34,7 +34,7 @@ Le scénario d'intégration repose sur les étapes suivantes :
 
 Chaque scénario place un ancien `session.json` forgé dans le `HOME` isolé : il doit rester ignoré.
 
-## 4. État actuel — 0.6.0-beta.3
+## 4. État actuel — 0.6.0-beta.4
 
 - Chargement de la configuration : validé.
 - Validation des paramètres : validée.

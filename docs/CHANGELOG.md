@@ -1,6 +1,6 @@
 # NOUR SENTINEL — Changelog
 
-## [Unreleased] — Tableau de bord local
+## [0.6.0-beta.4] — Tableau de bord local
 
 ### Added
 - Commande `dashboard` (`--intel dashboard [--port 8765]`) : interface web locale servie sur `127.0.0.1` uniquement, sans aucune dépendance externe (`http.server` de la bibliothèque standard).
@@ -16,6 +16,7 @@
 - L'exécution des capacités a lieu dans le thread principal, seul à détenir l'autorisation `authz` ; les handlers HTTP ne collectent jamais eux-mêmes.
 - La sortie JSON du CLI reste inchangée : `dashboard` est la seule commande qui bloque (Ctrl+C) au lieu d'écrire un rapport.
 - Cliquer une option ne collecte rien : la sélection est distincte de l'exécution, déclenchée par le bouton « Exécuter ».
+- Versions harmonisées : `lab_version` 0.6.0-beta.4 dans les rapports, la bannière, le lanceur, `protocol.json` et le binaire Rust ; `core_version` reste 0.5.0.
 
 ## [0.6.0-beta.3] — Entry Point Hardening
 

@@ -3,7 +3,7 @@
     "version": "3.0",
     "protocol_version": "3.0",
     "core_version": "0.5.0",
-    "lab_version": "0.6.0-beta.3",
+    "lab_version": "0.6.0-beta.4",
     "encoding": "UTF-8",
     "transport": "stdin-stdout",
     "sender": "rust-network-engine",
@@ -377,7 +377,7 @@
             "engine": "NOUR SENTINEL",
             "version": "0.5.0",
             "core_version": "0.5.0",
-            "lab_version": "0.6.0-beta.3",
+            "lab_version": "0.6.0-beta.4",
             "protocol_version": "3.0",
             "source": "rust-network-engine",
             "capabilities": [
